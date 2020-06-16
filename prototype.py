@@ -16,7 +16,7 @@ import keras.layers as layers
 """
 データの取得
 """
-# data-fileの場所（kaggleからDLする）
+# data-fileの場所（google-colabの場合、google-driveのルートが、"drive/My Drive" となる）
 data_path = "data"
 train_h5_path = os.path.join(data_path, "food_c101_n10099_r64x64x3.h5")  # train-data   pathの文字列を確認してみよう
 test_h5_path = os.path.join(data_path, "food_test_c101_n1000_r64x64x3.h5")  # test-data
@@ -109,7 +109,8 @@ model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['ac
 
 # 訓練の実行
 epochs = 10
-history = model.fit(x=x_train_gray, y=y_train, batch_size=100, epochs=epochs, validation_split=0.2)
+batch_size = 100
+history = model.fit(x=x_train_gray, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 # historyに訓練の推移のデータが格納される
 
 
@@ -160,8 +161,7 @@ model = Model(inputs=inputs, outputs=x)
 # 以降は同じ
 model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
 
-epochs = 10
-history = model.fit(x=x_train_gray, y=y_train, batch_size=100, epochs=epochs, validation_split=0.2)
+history = model.fit(x=x_train_gray, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 
 score = model.evaluate(x_test_gray, y_test)
 print('test_loss:', score[0])
