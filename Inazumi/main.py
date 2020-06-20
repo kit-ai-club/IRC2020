@@ -15,20 +15,20 @@ import keras.layers as layers
 
 #パラメータの設定
 epochs = 10
-batch_size = 100
+batch_size = 200
 
 """
 データの取得
 """
 # data-fileの場所（google-colabの場合、google-driveのルートが、"drive/My Drive" となる）
 # ローカル環境でのディレクトリ
-# data_path = "data"
+# ../data -> 'IRC2020'フォルダに戻り，'data'フォルダを参照する，
+#data_path = "../data"
 # google-colab 上のディレクトリ
 data_path = os.path.join("drive", "My Drive");
 train_h5_path = os.path.join(data_path, "food_c101_n10099_r64x64x3.h5")  # train-data   pathの文字列を確認してみよう
 test_h5_path = os.path.join(data_path, "food_test_c101_n1000_r64x64x3.h5")  # test-data
 # windowsとlinuxで、スラッシュとバックスラッシュの違いがあることを気にしないために、 os.path.join を使う
-
 
 # train-data
 with h5py.File(train_h5_path, 'r') as file:  # train-dataを 'r' = read mode で読み込んで、変数fileに格納
@@ -42,23 +42,11 @@ with h5py.File(train_h5_path, 'r') as file:  # train-dataを 'r' = read mode で
 
 # x_train = (10099, 64, 64, 3), y_train = (10099, 101)
 
-
 # test-data
 with h5py.File(test_h5_path, 'r') as file:
     print(file.keys())
     x_test = file['images'].value
     y_test = file['category'].value
-
-
-def gray_scale(x):
-    # Y = 0.299 * R + 0.587 * G + 0.114 * B
-    y = 0.299 * x[:, :, :, 0] + 0.587 * x[:, :, :, 1] + 0.114 * x[:, :, :, 2]  # x_train = (10099, 64, 64, 3)
-    return 255 - y  # yは輝度なので255-y
-
-
-# グレースケールにする（全結合層は、3チャンネル(RGB)の情報を扱えないため）
-x_train_gray = gray_scale(x_train)  # shapeを確認しよう
-x_test_gray = gray_scale(x_test)
 
 
 """
@@ -74,19 +62,18 @@ fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
 ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 =「1行2列のaxesを作って、その1番目(1列目)をreturnしろ」
 ax.imshow(x_train[0])  # 画像ならimshow()
 ax = fig.add_subplot(122)
-ax.imshow(x_train_gray[0], cmap='Greys')  # gray-scaleデータなので追加の引数
+# ax.imshow(x_train_gray[0], cmap='Greys')  # gray-scaleデータなので追加の引数
 plt.show()  # 最後はpltに戻る
+
 
 """
 データの加工
 """
-# 全結合層を使うので、画像を1次元化。画像データの行列を短冊状に切ってベクトル化。
-x_train_gray = x_train_gray.reshape(10099, 64, 64, 1)
-x_test_gray = x_test_gray.reshape(1000, 64, 64, 1)
 
-# 画素を0~1の範囲に変換(正規化)。入力される値は0付近でないと、訓練が安定しない。
-x_train_gray = x_train_gray / 255
-x_test_gray = x_test_gray / 255
+# 画素を0~1の範囲に変換(正規化)。入力される値は０付近でないと、訓練が安定しない。
+x_train = x_train / 255
+x_test = x_test / 255
+
 
 """
 keras Functinal API での流れ
@@ -97,8 +84,7 @@ keras Functinal API での流れ
 ⑤model.fit()  　　　  訓練
 ⑥model.evaluate()　　 評価
 """
-
-inputs = layers.Input(shape=(64,64,1))
+inputs = layers.Input(shape=(64,64,3))
 x = layers.Conv2D(256, kernel_size=(3, 3), padding='same', activation='relu')(inputs)
 x = layers.Conv2D(256, kernel_size=(3, 3), padding='same', activation='relu')(x)
 x = layers.MaxPool2D(pool_size=(2, 2))(x)
@@ -119,9 +105,9 @@ model = Model(inputs=inputs, outputs=x)
 
 model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
 
-history = model.fit(x=x_train_gray, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+history = model.fit(x=x_train, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 
-score = model.evaluate(x_test_gray, y_test)
+score = model.evaluate(x_test, y_test)
 print('test_loss:', score[0])
 print('test_acc:', score[1])
 
