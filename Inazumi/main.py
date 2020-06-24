@@ -1,10 +1,3 @@
-"""
-【import構文とライブラリ】
-ライブラリ：パッケージをまとめたものであって、Anaconda とかを使ってインストールできるようにしたもの。numpy、keras など。
-パッケージ：.py（プログラムファイル）をまとめたディレクトリ（フォルダ）であって、 __init__.py  を放り込んだもの。
-　パッケージの中にあるものは、importできる。
-　自分のプロジェクト内のディレクトリにも、__init__.py というファイルがあれば、それをパッケージと認識させることができ、中のモジュール等をimportできる。
-"""
 import os
 import matplotlib.pyplot as plt
 import h5py
@@ -13,9 +6,9 @@ from keras.models import Model
 import keras.layers as layers
 # pycharmでは、F4 を押すと、引用元・定義元に飛べるので使ってみよう
 
-#パラメータの設定
+# パラメータの設定
 epochs = 10
-batch_size = 200
+batch_size = 100
 
 """
 データの取得
@@ -23,9 +16,9 @@ batch_size = 200
 # data-fileの場所（google-colabの場合、google-driveのルートが、"drive/My Drive" となる）
 # ローカル環境でのディレクトリ
 # ../data -> 'IRC2020'フォルダに戻り，'data'フォルダを参照する，
-#data_path = "../data"
+# data_path = "../data"
 # google-colab 上のディレクトリ
-data_path = os.path.join("drive", "My Drive");
+data_path = os.path.join("drive", "My Drive")
 train_h5_path = os.path.join(data_path, "food_c101_n10099_r64x64x3.h5")  # train-data   pathの文字列を確認してみよう
 test_h5_path = os.path.join(data_path, "food_test_c101_n1000_r64x64x3.h5")  # test-data
 # windowsとlinuxで、スラッシュとバックスラッシュの違いがあることを気にしないために、 os.path.join を使う
@@ -48,7 +41,6 @@ with h5py.File(test_h5_path, 'r') as file:
     x_test = file['images'].value
     y_test = file['category'].value
 
-
 """
 【matplotlib.pyplotの基本】
 ※pyplotはpltとしてimportしておく
@@ -62,9 +54,7 @@ fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
 ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 =「1行2列のaxesを作って、その1番目(1列目)をreturnしろ」
 ax.imshow(x_train[0])  # 画像ならimshow()
 ax = fig.add_subplot(122)
-# ax.imshow(x_train_gray[0], cmap='Greys')  # gray-scaleデータなので追加の引数
 plt.show()  # 最後はpltに戻る
-
 
 """
 データの加工
@@ -73,7 +63,6 @@ plt.show()  # 最後はpltに戻る
 # 画素を0~1の範囲に変換(正規化)。入力される値は０付近でないと、訓練が安定しない。
 x_train = x_train / 255
 x_test = x_test / 255
-
 
 """
 keras Functinal API での流れ
@@ -84,22 +73,44 @@ keras Functinal API での流れ
 ⑤model.fit()  　　　  訓練
 ⑥model.evaluate()　　 評価
 """
-inputs = layers.Input(shape=(64,64,3))
-x = layers.Conv2D(256, kernel_size=(3, 3), padding='same', activation='relu')(inputs)
-x = layers.Conv2D(256, kernel_size=(3, 3), padding='same', activation='relu')(x)
-x = layers.MaxPool2D(pool_size=(2, 2))(x)
-x = layers.Dropout(0.25)(x)
+# Resnet 楽に最適化するため，設計部分は関数化したほうが良い
+inputs = layers.Input(shape=(64, 64, 3))
+filter_size = 64
+ki = "he_normal"
+cycle = 5
+x = layers.Conv2D(filters=filter_size, kernel_size=(7, 7), strides=(1, 1), kernel_initializer=ki, padding="same")(inputs)
+x = layers.BatchNormalization()(x)
+x = layers.Activation('relu')(x)
+x = layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')(x)
+# forループ内はCNN層
+for i in range(cycle):
+    shortcut = x
 
-x = layers.Conv2D(256, kernel_size=(3, 3), padding='same', activation='relu')(x)
-x = layers.Conv2D(256, kernel_size=(3, 3), padding='same', activation='relu')(x)
-x = layers.MaxPool2D(pool_size=(2, 2))(x)
-x = layers.Dropout(0.25)(x)
+    x = layers.Conv2D(filters=filter_size, kernel_size=(1, 1), kernel_initializer=ki, padding="same")(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation('relu')(x)
+    x = layers.Dropout(rate=0.3)(x)
 
-# 全結合層に入力するため，一次元化を行う
-x = layers.Flatten()(x)
-x = layers.Dense(512, activation='relu')(x)
-x = layers.Dropout(0.25)(x)
-x = layers.Dense(101, activation='softmax')(x)
+    x = layers.Conv2D(filters=filter_size*2, kernel_size=(3, 3), padding= "same")(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation('relu')(x)
+
+    x = layers.Conv2D(filters=filter_size*4, kernel_size=(3, 3), padding= "same")(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation('relu')(x)
+    # Concatenate([a1,a2,...], axis=0,1...) -> 2個以上の配列を軸指定して結合
+    # axis = 0 -> 1次元配列　axis = 1 -> 2次元配列　...　
+    x = layers.Concatenate()([x, shortcut])
+    if i != (cycle - 1):
+        x = layers.MaxPooling2D(pool_size=2)(x)
+
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.BatchNormalization()(x)
+x = layers.Activation('relu')(x)
+x = layers.Dropout(rate=0.3)(x)
+x = layers.Dense(101)(x)
+x = layers.BatchNormalization()(x)
+x = layers.Activation('softmax')(x)
 
 model = Model(inputs=inputs, outputs=x)
 
