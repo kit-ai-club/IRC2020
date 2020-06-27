@@ -3,12 +3,148 @@ import matplotlib.pyplot as plt
 import h5py
 # kerasというライブラリのmodelsパッケージにある、Modelを使う
 from keras.models import Model
-import keras.layers as layers
-# pycharmでは、F4 を押すと、引用元・定義元に飛べるので使ってみよう
+from keras import backend as K
+from keras.layers import (
+    Activation,
+    Add,
+    BatchNormalization,
+    Conv2D,
+    Dense,
+    Dropout,
+    Flatten,
+    GlobalAveragePooling2D,
+    Input,
+    MaxPooling2D,
+)
+# L2正則化のパッケージ
+from keras.regularizers import l2
+# pycharmでは、F4 を押すと、引用元・定義元に飛べる
 
-# パラメータの設定
+# ハイパーパラメータの設定
 epochs = 10
 batch_size = 100
+optimizer = "rmsprop"
+loss = "categorical_crossentropy"
+
+# Conv2Dに関するパラメータ
+kernel_init = "he_normal"
+kernel_regularizer = l2(1.0e-4)
+default_strides = (1, 1)
+
+def shortcut(x, residual):
+    """shortcut connection を作成する関数
+        x: CNNを通す前の結果
+        residual: CNNを通した後の結果,残余
+        return:
+    """
+    x_shape = K.int_shape(x)
+    residual_shape = K.int_shape(residual)
+
+    if x_shape == residual_shape:
+        # x と residual の形状が同じ場合
+        shortcut = x
+    else:
+        # x と residualの形状が異なる場合
+        # x と residualの形状を一致させる
+        stride_w = int(round(x_shape[1] / residual_shape[1]))
+        stride_h = int(round(x_shape[2] / residual_shape[2]))
+        shortcut = Conv2D(filters=residual_shape[3],
+                          kernel_size=(1, 1),
+                          strides=(stride_w, stride_h),
+                          kernel_initializer=kernel_init,
+                          kernel_regularizer=kernel_regularizer,
+                          )(x)
+    return Add()([shortcut, residual])
+
+def ResNetConv2D(filters,kernel_size, strides, x):
+    """
+        ResNetConv2D : Conv2Dを計算するヘルパー関数
+    """
+    conv = Conv2D(filters=filters,
+                  kernel_size=kernel_size,
+                  strides=strides,
+                  padding="same",
+                  kernel_initializer=kernel_init,
+                  kernel_regularizer=kernel_regularizer)(x)
+    return conv
+
+def bn_relu_conv(filters, kernel_size, strides, x):
+    """
+        BatchNormalization -> Activation -> Conv の順に入れ込みを行う
+    """
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+    conv = ResNetConv2D(filters, kernel_size, strides, x)
+    return conv
+
+# Architecture type
+def plain_block(filters, first_strides, is_first_block_of_first_layer):
+    """
+        plain_block: plain_blockを生成する
+        filters: フィルター数
+        first_strides: 初めに指定する畳み込みのストライド
+        is_first_block_of_first_layer: 初めに入力する residualかどうか
+        return: plain_blockを実現する関数
+    """
+
+    def f(x):
+
+        if is_first_block_of_first_layer:
+            conv1 = ResNetConv2D(filters, (3, 3), default_strides, x)
+        else:
+            conv1 = bn_relu_conv(filters, (3, 3), first_strides, x)
+        conv2 = bn_relu_conv(filters, (3, 3), default_strides, conv1)
+
+        return shortcut(x, conv2)
+
+    return f
+
+def bottleneck_block(filters, first_strides, is_first_block_of_first_layer):
+    """
+        bottleneck_block: bottleneck_blockを生成する
+        filters: フィルター数
+        first_strides: 初めに指定する畳み込みのストライド
+        is_first_block_of_first_layer: 初めに入力するresidualかどうか
+        return: bottleneck_blockを実現する関数
+    """
+
+    def f(x):
+
+        if is_first_block_of_first_layer:
+            conv1 = ResNetConv2D(filters, (3, 3), default_strides, x)
+        else:
+            conv1 = ResNetConv2D(filters, (1, 1), first_strides, x)
+        conv2 = bn_relu_conv(filters, (3, 3), default_strides, conv1)
+        conv3 = bn_relu_conv(filters * 4, (1, 1), default_strides, conv2)
+        return shortcut(x, conv3)
+
+    return f
+
+def residual_blocks(block_function, filters, repetitions, is_first_layer):
+    """
+        residual block を反復する構造を作成する。
+        block_function: residual block を作成する関数
+        filters: フィルター数
+        repetitions: residual block を何個繰り返すか。
+        is_first_layer: max pooling 直後かどうか
+    """
+
+    def f(x):
+        for i in range(repetitions):
+            # conv3_x, conv4_x, conv5_x の最初の畳み込みは、
+            # プーリング目的の畳み込みなので、strides を (2, 2) にする。
+            # ただし、conv2_x の最初の畳み込みは直前の max pooling 層でプーリングしているので
+            # strides を (1, 1) にする。
+            first_strides = (2, 2) if i == 0 and not is_first_layer else (1, 1)
+
+            x = block_function(
+                filters=filters,
+                first_strides=first_strides,
+                is_first_block_of_first_layer=(i == 0 and is_first_layer),
+            )(x)
+        return x
+
+    return f
 
 """
 データの取得
@@ -42,21 +178,6 @@ with h5py.File(test_h5_path, 'r') as file:
     y_test = file['category'].value
 
 """
-【matplotlib.pyplotの基本】
-※pyplotはpltとしてimportしておく
-①figure（ウィンドウ）を作成する
-②figure上にaxes（グラフ領域）を１つ以上作成する
-③axes上にグラフを作成する（axes.plot()なら折れ線グラフ、など）
-④show
-"""
-# 画像チェック
-fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
-ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 =「1行2列のaxesを作って、その1番目(1列目)をreturnしろ」
-ax.imshow(x_train[0])  # 画像ならimshow()
-ax = fig.add_subplot(122)
-plt.show()  # 最後はpltに戻る
-
-"""
 データの加工
 """
 
@@ -73,48 +194,42 @@ keras Functinal API での流れ
 ⑤model.fit()  　　　  訓練
 ⑥model.evaluate()　　 評価
 """
-# Resnet 楽に最適化するため，設計部分は関数化したほうが良い
-inputs = layers.Input(shape=(64, 64, 3))
+
+# Resnet層の作成
+# ResNetに関するパラメータ
+inputs = Input(shape=(64, 64, 3))
 filter_size = 64
-ki = "he_normal"
 cycle = 5
-x = layers.Conv2D(filters=filter_size, kernel_size=(7, 7), strides=(1, 1), kernel_initializer=ki, padding="same")(inputs)
-x = layers.BatchNormalization()(x)
-x = layers.Activation('relu')(x)
-x = layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')(x)
-# forループ内はCNN層
+block_fn = bottleneck_block
+# plain_block -> Plain アーキテクチャ
+# bottleneck_block -> Bottleneck アーキテクチャ
+
+# 第1層
+x = Conv2D(filters=filter_size,
+           kernel_size=(7, 7),
+           strides=(1, 1),
+           kernel_initializer=kernel_init,
+           padding="same")(inputs)
+x = BatchNormalization()(x)
+x = Activation('relu')(x)
+x = MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')(x)
+block = x
+# 第2層　~ (最終層 - 1)層
 for i in range(cycle):
-    shortcut = x
+    block = residual_blocks(block_fn,
+                            filters=filter_size,
+                            repetitions=1,
+                            is_first_layer=(i == 0))(block)
+    # filter_size *= 2
 
-    x = layers.Conv2D(filters=filter_size, kernel_size=(1, 1), kernel_initializer=ki, padding="same")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Activation('relu')(x)
-    x = layers.Dropout(rate=0.3)(x)
+x = BatchNormalization()(block)
+x = Activation('relu')(x)
+x = GlobalAveragePooling2D()(x)
+outputs = Dense(units=101, kernel_initializer=kernel_init, activation='softmax')(x)
 
-    x = layers.Conv2D(filters=filter_size*2, kernel_size=(3, 3), padding= "same")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Activation('relu')(x)
+model = Model(inputs=inputs, outputs=outputs)
 
-    x = layers.Conv2D(filters=filter_size*4, kernel_size=(3, 3), padding= "same")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Activation('relu')(x)
-    # Concatenate([a1,a2,...], axis=0,1...) -> 2個以上の配列を軸指定して結合
-    # axis = 0 -> 1次元配列　axis = 1 -> 2次元配列　...　
-    x = layers.Concatenate()([x, shortcut])
-    if i != (cycle - 1):
-        x = layers.MaxPooling2D(pool_size=2)(x)
-
-x = layers.GlobalAveragePooling2D()(x)
-x = layers.BatchNormalization()(x)
-x = layers.Activation('relu')(x)
-x = layers.Dropout(rate=0.3)(x)
-x = layers.Dense(101)(x)
-x = layers.BatchNormalization()(x)
-x = layers.Activation('softmax')(x)
-
-model = Model(inputs=inputs, outputs=x)
-
-model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
+model.compile(optimizer=optimizer, loss=loss, metrics=['acc'])  # metrics=評価関数、acc=accuracy
 
 history = model.fit(x=x_train, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 
@@ -134,6 +249,3 @@ ax.plot(range(epochs), history.history['val_loss'], label='validation')
 ax.set_title('loss')
 ax.legend()
 plt.show()
-
-# いろんなハイパラを全てハードコーディングしていますが、
-# 通常はプログラムの最初にまとめたり、ハイパラだけをまとめたファイルから読み込んだりします。
