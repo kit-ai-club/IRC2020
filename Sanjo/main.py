@@ -56,9 +56,9 @@ with h5py.File(test_h5_path, 'r') as file:
 # グレースケールにする（全結合層は、3チャンネル(RGB)の情報を扱えないため）
 #x_train_gray = gray_scale(x_train)  # shapeを確認しよう
 #x_test_gray = gray_scale(x_test)
-x_train_rgb = np.reshape(x_train, (-1, 64 * 64 * 3))
-x_test_rgb = np.reshape(x_test, (-1, 64 * 64 * 3))
-
+# x_train_rgb = np.reshape(x_train, (-1, 64 * 64 * 3))
+# x_test_rgb = np.reshape(x_test, (-1, 64 * 64 * 3))
+#
 
 
 
