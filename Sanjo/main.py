@@ -54,13 +54,9 @@ with h5py.File(test_h5_path, 'r') as file:
 
 
 # グレースケールにする（全結合層は、3チャンネル(RGB)の情報を扱えないため）
-#x_train_gray = gray_scale(x_train)  # shapeを確認しよう
-#x_test_gray = gray_scale(x_test)
 # x_train_rgb = np.reshape(x_train, (-1, 64 * 64 * 3))
 # x_test_rgb = np.reshape(x_test, (-1, 64 * 64 * 3))
 #
-
-
 
 """
 【matplotlib.pyplotの基本】
@@ -87,12 +83,8 @@ with h5py.File(test_h5_path, 'r') as file:
 #x_test_gray = x_test_gray.reshape(1000, 64 * 64)
 
 # 画素を0~1の範囲に変換(正規化)。入力される値は０付近でないと、訓練が安定しない。
-#x_train_gray = x_train_gray / 255
-#x_test_gray = x_test_gray / 255
-
 x_train_rgb = x_train_rgb / 255
 x_test_rgb = x_test_rgb / 255
-
 
 """
 keras Sequential での流れ
@@ -105,7 +97,7 @@ keras Sequential での流れ
 
 # Sequentialは、モデルを入れる箱のクラス。
 model = Sequential()
-#model.add(layers.Dense(512, activation='relu', input_dim=64 * 64))  # Dense＝全結合層。activation＝活性化関数。input_dim＝入力次元＝入力ノードの数。512＝出力ノードの数。
+# Dense＝全結合層。activation＝活性化関数。input_dim＝入力次元＝入力ノードの数。512＝出力ノードの数。
 model.add(layers.Dense(512, activation='relu', input_dim=64 * 64 * 3))
 model.add(layers.Dense(512, activation='relu'))
 model.add(layers.Dense(101, activation='softmax'))  # 最終層のactivationは、確率を出すためにsoftmax。101クラスの分類。
@@ -161,13 +153,18 @@ keras Functinal API での流れ
 ⑥model.evaluate()　　 評価
 """
 
-#inputs = layers.Input(shape=(64*64,))
-inputs = layers.Input(shape=(64*64*3,))
-x = layers.Dense(512, activation='relu')(inputs)
-x = layers.Dense(512, activation='relu')(x)
-x = layers.Dense(512, activation='relu')(x)
-x = layers.Dense(512, activation='relu')(x)
-x = layers.Dense(512, activation='relu')(x)
+inputs = layers.Input(shape=(64,64,3))
+x = layers.Conv2D(64, kernel_size=3, padding='same',activation='relu')(inputs)
+x = layers.Dropout(0.5)(x)
+x = layers.MaxPool(2)(x)    #32, 32, 64
+x = layers.Conv2D(128, kernel_size=3, padding='same',activation='relu')(x)
+x = layers.MaxPool(2)(x)    #16, 16, 128
+x = layers.Conv2D(256, kernel_size=3, padding='same',activation='relu')(x)
+x = layers.MaxPool(2)(x)    #8, 8, 256
+x = layers.Conv2D(512, kernel_size=3, padding='same',activation='relu')(x)
+x = layers.MaxPool(2)(x)    #4, 4, 512
+x = layers.Conv2D(1024, kernel_size=3, padding='same',activation='relu')(x)
+x = layers.GlobalAveragePooling2D()(x)
 x = layers.Dense(101, activation='softmax')(x)
 
 model = Model(inputs=inputs, outputs=x)
@@ -175,10 +172,8 @@ model = Model(inputs=inputs, outputs=x)
 # 以降は同じ
 model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
 
-#history = model.fit(x=x_train_gray, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 history = model.fit(x=x_train_rgb, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 
-#score = model.evaluate(x_test_gray, y_test)
 score = model.evaluate(x_test_rgb, y_test)
 print('test_loss:', score[0])
 print('test_acc:', score[1])
