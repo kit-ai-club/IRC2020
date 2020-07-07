@@ -11,6 +11,12 @@ from keras.losses import categorical_crossentropy
 from keras.layers import GlobalAveragePooling2D
 
 """
+ハイパラ調整
+"""
+epochs = 10
+batch_size = 100
+
+"""
 データの取得
 """
 # data-fileの場所（kaggleからDLする）
@@ -75,8 +81,7 @@ model.add(Dropout(0.5))
 model.add(Dense(101, activation='softmax'))
 model.compile(loss='categorical_crossentropy', optimizer=Adam(), metrics=['accuracy'])
 # 訓練の実行
-epochs = 10
-batch_size = 100
+
 history = model.fit(x=x_train, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 # historyに訓練の推移のデータが格納される
 # 評価
