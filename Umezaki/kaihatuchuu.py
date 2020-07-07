@@ -2,13 +2,16 @@ import os
 import matplotlib.pyplot as plt
 import h5py
 from keras.utils import np_utils
-from keras.models import Sequential
-from keras.layers import Dense, Activation, Flatten, Dropout, Conv2D, MaxPooling2D, Reshape, BatchNormalization
+from keras.models import Sequential, Model
+from keras.layers import Dense, Activation, Flatten, Dropout, Conv2D, MaxPooling2D, Reshape, BatchNormalization, Input, \
+    Concatenate
 from keras.optimizers import Adam
 from keras.layers.pooling import MaxPooling2D
 from keras.layers.convolutional import Conv2D
 from keras.losses import categorical_crossentropy
 from keras.layers import GlobalAveragePooling2D
+from keras import regularizers
+import keras.layers as layers
 
 """
 ハイパラ調整
@@ -40,62 +43,6 @@ with h5py.File(test_h5_path, 'r') as file:
     print(file.keys())
     x_test = file['images'].value
     y_test = file['category'].value
-
-
-keras.preprocessing.image.ImageDataGenerator(
-    featurewise_center=False,
-    samplewise_center=False,
-    featurewise_std_normalization=False,
-    samplewise_std_normalization=False,
-    zca_whitening=False,
-    zca_epsilon=1e-06,
-    rotation_range=0.0,
-    width_shift_range=0.0,
-    height_shift_range=0.0,
-    brightness_range=None,
-    shear_range=0.0,
-    zoom_range=0.0,
-    channel_shift_range=0.0,
-    fill_mode='nearest',
-    cval=0.0,
-    horizontal_flip=False,
-    vertical_flip=False,
-    rescale=None,
-    preprocessing_function=None,
-    data_format=None,
-    validation_split=0.0)
-
-"""
-Data Augmentation(仮)
-"""
-datagen = ImageDataGenerator(
-    featurewise_center=True,
-    featurewise_std_normalization=True,
-    rotation_range=20,
-    width_shift_range=0.2,
-    height_shift_range=0.2,
-    horizontal_flip=True)
-
-# compute quantities required for featurewise normalization
-# (std, mean, and principal components if ZCA whitening is applied)
-datagen.fit(x_train)
-
-# fits the model on batches with real-time data augmentation:
-model.fit_generator(datagen.flow(x_train, y_train, batch_size=32),
-                    steps_per_epoch=len(x_train) / 32, epochs=epochs)
-
-# here's a more "manual" example
-for e in range(epochs):
-    print('Epoch', e)
-    batches = 0
-    for x_batch, y_batch in datagen.flow(x_train, y_train, batch_size=32):
-        model.fit(x_batch, y_batch)
-        batches += 1
-        if batches >= len(x_train) / 32:
-            # we need to break the loop by hand because
-            # the generator loops indefinitely
-            break
-
 """
 【matplotlib.pyplotの基本】
 ※pyplotはpltとしてimportしておく
@@ -104,15 +51,62 @@ for e in range(epochs):
 ③axes上にグラフを作成する（axes.plot()なら折れ線グラフ、など）
 ④show
 """
+
+
 # 画像チェック
 fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
 ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 =「1行2列のaxesを作って、その1番目(1列目)をreturnしろ」
 ax.imshow(x_train[0])  # 画像ならimshow()
 # 最後はpltに戻る
-x_train = x_train.astype('float32')
-x_test = x_test.astype('float32')
 x_train = x_train / 255.0
 x_test = x_test / 255.0
+
+"""
+Data Augmentation
+"""
+from keras.preprocessing.image import ImageDataGenerator
+
+datagen = ImageDataGenerator(
+    featurewise_center=False,#データセット全体で、入力の平均を０にする。これいんのかな
+    featurewise_std_normalization=False,#入力をデータセットの標準偏差で正規化する。さすがはNormalization
+    rotation_range=90,#画像をランダムに回転する回転範囲
+    width_shift_range=0.2,#ランダムに水平シフト
+    height_shift_range=0.2,#ランダムに垂直シフト
+    horizontal_flip=True,#ランダムに水平方向反転
+    vertical_flip=True,#ランダムに垂直方向反転
+    zoom_range=10)#ランダムにズームする範囲
+
+datagen.fit(x_train)#
+
+for e in range(epochs):
+    print('Epoch', e)
+    batches = 0
+    for x_batch, y_batch in datagen.flow(x_train, y_train, batch_size=batch_size):
+        model.fit(x_batch, y_batch)
+        batches += 1
+        if batches >= len(x_train) / 32:
+            # we need to break the loop by hand because
+            # the generator loops indefinitely
+            break
+
+"""
+modelcheckpointの作成
+"""
+from keras.callbacks import ModelCheckpoint#Epoch終了後の各数値（acc,loss,val_acc,val_loss)を監視して条件が揃った場合モデルを保存する
+
+modelcheckpoint = ModelCheckpoint(filepath = 'modelimage.h5',#重みのファイル名そのもの
+                                  monitor='test_loss',#監視する値
+                                  verbose=1,#1なら結果表示
+                                  save_best_only=True,#判定結果から保存を決定
+                                  save_weights_only=False,#True=モデルの重みが保存False＝モデル全体を保存
+                                  mode='min',#小さい時保存
+                                  period=1)#何epoch数ごとに
+
+model.fit_generator(datagen.flow(x_train, y_train, batch_size=batch_size),
+                    steps_per_epoch=len(x_train) / batch_size, epochs=epochs, callbacks=[modelcheckpoint])
+
+"""
+sequentialモデル一旦グッバイ
 model = Sequential()
 model.add(Conv2D(64, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu', input_shape=(64, 64, 3)))
 model.add(BatchNormalization())
@@ -136,8 +130,9 @@ model.add(Dense(1024, activation='relu'))
 model.add(Dropout(0.5))
 model.add(Dense(101, activation='softmax'))
 model.compile(loss='categorical_crossentropy', optimizer=Adam(), metrics=['accuracy'])
-# 訓練の実行
 
+
+# 訓練の実行
 history = model.fit(x=x_train, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 # historyに訓練の推移のデータが格納される
 # 評価
@@ -156,4 +151,65 @@ ax.plot(range(epochs), history.history['loss'], label='training')
 ax.plot(range(epochs), history.history['val_loss'], label='validation')
 ax.set_title('loss')
 ax.legend()  # 凡例を表示する
+plt.show()
+"""
+
+
+"""
+resnetの部分
+"""
+inputs = Input(shape=x_train.shape[1:])
+f = 64 #ここも変えるべきだろうか？
+ki = 'he_normal'
+kr = regularizers.l2(1e-11)
+x = Conv2D(filters=f, kernel_size=7, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(inputs)
+x = MaxPooling2D(pool_size=2)(x)
+n = 5 #回数の設定（ここは実験で変更したい）
+for i in range(n):
+    shortcut = x
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    x = Dropout(rate=0.3)(x)
+    x = Conv2D(filters=f*(2**i), kernel_size=1, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    x = Conv2D(filters=f*(2**i), kernel_size=3, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    x = Conv2D(filters=f*(2**(i+2)), kernel_size=1, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
+    x = Concatenate()([x, shortcut])
+    if i != (n - 1):
+        x = MaxPooling2D(pool_size=2)(x)
+x = GlobalAveragePooling2D()(x)
+x = BatchNormalization()(x)
+x = Activation('relu')(x)
+x = Dropout(rate=0.4)(x)
+x = Dense(units=101, kernel_initializer=ki, kernel_regularizer=kr)(x)
+x = BatchNormalization()(x)
+x = Activation('softmax')(x)
+x = Dropout(rate=0.4)(x)
+
+model = Model(inputs=inputs, outputs=x)
+
+# 以降は同じ
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
+
+score = model.evaluate(x_test, y_test)
+print('test_loss:', score[0])
+print('test_acc:', score[1])
+
+
+
+
+fig = plt.figure(figsize=(10, 5))
+ax = fig.add_subplot(121)
+ax.plot(range(epochs), history.history['acc'], label='training')
+ax.plot(range(epochs), history.history['val_acc'], label='validation')
+ax.set_title('acc')
+ax.legend()
+ax = fig.add_subplot(122)
+ax.plot(range(epochs), history.history['loss'], label='training')
+ax.plot(range(epochs), history.history['val_loss'], label='validation')
+ax.set_title('loss')
+ax.legend()
 plt.show()
