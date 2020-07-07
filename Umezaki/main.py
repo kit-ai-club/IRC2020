@@ -109,12 +109,12 @@ plt.show()
 resnetの部分
 """
 inputs = Input(shape=x_train.shape[1:])
-f = 64
+f = 64 #ここも変えるべきだろうか？
 ki = 'he_normal'
 kr = regularizers.l2(1e-11)
 x = Conv2D(filters=f, kernel_size=7, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(inputs)
 x = MaxPooling2D(pool_size=2)(x)
-n = 5
+n = 5 #回数の設定（ここは実験で変更したい）
 for i in range(n):
     shortcut = x
     x = BatchNormalization()(x)
