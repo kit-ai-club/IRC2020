@@ -51,6 +51,8 @@ with h5py.File(test_h5_path, 'r') as file:
 ③axes上にグラフを作成する（axes.plot()なら折れ線グラフ、など）
 ④show
 """
+
+
 # 画像チェック
 fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
 ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 =「1行2列のaxesを作って、その1番目(1列目)をreturnしろ」
@@ -60,6 +62,9 @@ x_train = x_train.astype('float32')
 x_test = x_test.astype('float32')
 x_train = x_train / 255.0
 x_test = x_test / 255.0
+
+"""
+sequentialモデル一旦グッバイ
 model = Sequential()
 model.add(Conv2D(64, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu', input_shape=(64, 64, 3)))
 model.add(BatchNormalization())
@@ -83,8 +88,10 @@ model.add(Dense(1024, activation='relu'))
 model.add(Dropout(0.5))
 model.add(Dense(101, activation='softmax'))
 model.compile(loss='categorical_crossentropy', optimizer=Adam(), metrics=['accuracy'])
-# 訓練の実行
+"""
 
+
+# 訓練の実行
 history = model.fit(x=x_train, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 # historyに訓練の推移のデータが格納される
 # 評価
