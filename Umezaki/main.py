@@ -88,7 +88,6 @@ model.add(Dense(1024, activation='relu'))
 model.add(Dropout(0.5))
 model.add(Dense(101, activation='softmax'))
 model.compile(loss='categorical_crossentropy', optimizer=Adam(), metrics=['accuracy'])
-"""
 
 
 # 訓練の実行
@@ -111,6 +110,8 @@ ax.plot(range(epochs), history.history['val_loss'], label='validation')
 ax.set_title('loss')
 ax.legend()  # 凡例を表示する
 plt.show()
+"""
+
 
 """
 resnetの部分
