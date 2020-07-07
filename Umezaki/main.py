@@ -105,7 +105,9 @@ ax.set_title('loss')
 ax.legend()  # 凡例を表示する
 plt.show()
 
-#functional API
+"""
+resnetの部分
+"""
 inputs = Input(shape=x_train.shape[1:])
 f = 64
 ki = 'he_normal'
