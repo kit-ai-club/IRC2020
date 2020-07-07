@@ -2,13 +2,16 @@ import os
 import matplotlib.pyplot as plt
 import h5py
 from keras.utils import np_utils
-from keras.models import Sequential
-from keras.layers import Dense, Activation, Flatten, Dropout, Conv2D, MaxPooling2D, Reshape, BatchNormalization
+from keras.models import Sequential, Model
+from keras.layers import Dense, Activation, Flatten, Dropout, Conv2D, MaxPooling2D, Reshape, BatchNormalization, Input, \
+    Concatenate
 from keras.optimizers import Adam
 from keras.layers.pooling import MaxPooling2D
 from keras.layers.convolutional import Conv2D
 from keras.losses import categorical_crossentropy
 from keras.layers import GlobalAveragePooling2D
+from keras import regularizers
+import keras.layers as layers
 
 """
 ハイパラ調整
@@ -100,4 +103,60 @@ ax.plot(range(epochs), history.history['loss'], label='training')
 ax.plot(range(epochs), history.history['val_loss'], label='validation')
 ax.set_title('loss')
 ax.legend()  # 凡例を表示する
+plt.show()
+
+#functional API
+inputs = Input(shape=x_train.shape[1:])
+f = 64
+ki = 'he_normal'
+kr = regularizers.l2(1e-11)
+x = Conv2D(filters=f, kernel_size=7, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(inputs)
+x = MaxPooling2D(pool_size=2)(x)
+n = 5
+for i in range(n):
+    shortcut = x
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    x = Dropout(rate=0.3)(x)
+    x = Conv2D(filters=f*(2**i), kernel_size=1, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    x = Conv2D(filters=f*(2**i), kernel_size=3, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    x = Conv2D(filters=f*(2**(i+2)), kernel_size=1, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
+    x = Concatenate()([x, shortcut])
+    if i != (n - 1):
+        x = MaxPooling2D(pool_size=2)(x)
+x = GlobalAveragePooling2D()(x)
+x = BatchNormalization()(x)
+x = Activation('relu')(x)
+x = Dropout(rate=0.4)(x)
+x = Dense(units=101, kernel_initializer=ki, kernel_regularizer=kr)(x)
+x = BatchNormalization()(x)
+x = Activation('softmax')(x)
+x = Dropout(rate=0.4)(x)
+
+model = Model(inputs=inputs, outputs=x)
+
+# 以降は同じ
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
+
+history = model.fit(x=x_train, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+
+score = model.evaluate(x_test, y_test)
+print('test_loss:', score[0])
+print('test_acc:', score[1])
+
+fig = plt.figure(figsize=(10, 5))
+ax = fig.add_subplot(121)
+ax.plot(range(epochs), history.history['acc'], label='training')
+ax.plot(range(epochs), history.history['val_acc'], label='validation')
+ax.set_title('acc')
+ax.legend()
+ax = fig.add_subplot(122)
+ax.plot(range(epochs), history.history['loss'], label='training')
+ax.plot(range(epochs), history.history['val_loss'], label='validation')
+ax.set_title('loss')
+ax.legend()
 plt.show()
