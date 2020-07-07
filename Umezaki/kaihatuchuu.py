@@ -11,6 +11,12 @@ from keras.losses import categorical_crossentropy
 from keras.layers import GlobalAveragePooling2D
 
 """
+ハイパラ調整
+"""
+epochs = 10
+batch_size = 100
+
+"""
 データの取得
 """
 # data-fileの場所（kaggleからDLする）
@@ -34,6 +40,62 @@ with h5py.File(test_h5_path, 'r') as file:
     print(file.keys())
     x_test = file['images'].value
     y_test = file['category'].value
+
+
+keras.preprocessing.image.ImageDataGenerator(
+    featurewise_center=False,
+    samplewise_center=False,
+    featurewise_std_normalization=False,
+    samplewise_std_normalization=False,
+    zca_whitening=False,
+    zca_epsilon=1e-06,
+    rotation_range=0.0,
+    width_shift_range=0.0,
+    height_shift_range=0.0,
+    brightness_range=None,
+    shear_range=0.0,
+    zoom_range=0.0,
+    channel_shift_range=0.0,
+    fill_mode='nearest',
+    cval=0.0,
+    horizontal_flip=False,
+    vertical_flip=False,
+    rescale=None,
+    preprocessing_function=None,
+    data_format=None,
+    validation_split=0.0)
+
+"""
+Data Augmentation(仮)
+"""
+datagen = ImageDataGenerator(
+    featurewise_center=True,
+    featurewise_std_normalization=True,
+    rotation_range=20,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    horizontal_flip=True)
+
+# compute quantities required for featurewise normalization
+# (std, mean, and principal components if ZCA whitening is applied)
+datagen.fit(x_train)
+
+# fits the model on batches with real-time data augmentation:
+model.fit_generator(datagen.flow(x_train, y_train, batch_size=32),
+                    steps_per_epoch=len(x_train) / 32, epochs=epochs)
+
+# here's a more "manual" example
+for e in range(epochs):
+    print('Epoch', e)
+    batches = 0
+    for x_batch, y_batch in datagen.flow(x_train, y_train, batch_size=32):
+        model.fit(x_batch, y_batch)
+        batches += 1
+        if batches >= len(x_train) / 32:
+            # we need to break the loop by hand because
+            # the generator loops indefinitely
+            break
+
 """
 【matplotlib.pyplotの基本】
 ※pyplotはpltとしてimportしておく
@@ -75,8 +137,7 @@ model.add(Dropout(0.5))
 model.add(Dense(101, activation='softmax'))
 model.compile(loss='categorical_crossentropy', optimizer=Adam(), metrics=['accuracy'])
 # 訓練の実行
-epochs = 10
-batch_size = 100
+
 history = model.fit(x=x_train, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 # historyに訓練の推移のデータが格納される
 # 評価
