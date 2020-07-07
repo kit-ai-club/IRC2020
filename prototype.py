@@ -83,7 +83,6 @@ x_test_gray = x_test_gray.reshape(1000, 64 * 64)
 x_train_gray = x_train_gray / 255
 x_test_gray = x_test_gray / 255
 
-
 """
 keras Sequential での流れ
 ①model = Sequential()  箱の作成
@@ -136,7 +135,6 @@ ax.set_title('loss')
 ax.legend()  # 凡例を表示する
 
 plt.show()
-
 
 """
 keras Functinal API での流れ
