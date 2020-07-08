@@ -60,31 +60,6 @@ x_train = x_train / 255.0
 x_test = x_test / 255.0
 
 """
-Data Augmentation
-"""
-from keras.preprocessing.image import ImageDataGenerator
-
-def preprocess(x):
-    x /= 255.
-    return x
-
-# 指定した前処理を行う。
-datagen = ImageDataGenerator(preprocessing_function=preprocess)
-
-datagen = ImageDataGenerator(
-    featurewise_center=False,#データセット全体で、入力の平均を０にする。これいんのかな
-    featurewise_std_normalization=False,#入力をデータセットの標準偏差で正規化する。さすがはNormalization
-    rotation_range=90,#画像をランダムに回転する回転範囲
-    width_shift_range=0.2,#ランダムに水平シフト
-    height_shift_range=0.2,#ランダムに垂直シフト
-    horizontal_flip=True,#ランダムに水平方向反転
-    vertical_flip=True,#ランダムに垂直方向反転
-    zoom_range=10)#ランダムにズームする範囲
-"""
-datagen.fit(x_train)#これは ZCAホワイトニングを適用する場合に必要な統計量を計算する感じ？今回はホワイトニングしてないからいらんかな
-"""
-
-"""
 sequentialモデル一旦グッバイ
 model = Sequential()
 model.add(Conv2D(64, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu', input_shape=(64, 64, 3)))
@@ -174,27 +149,38 @@ model = Model(inputs=inputs, outputs=x)
 model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
 history = model.fit(x=x_train, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 
-g = datagen.flow(x_train, y_train, batch_size=batch_size)
-for i in range(9):
-    batches = g.next()
+"""
+Data Augmentation
+"""
+from keras.preprocessing.image import ImageDataGenerator
 
-#この下があんまりどうなってるかわからん
-for e in range(epochs):#epoch数分だけ回す。今回は100
-    print('Epoch', e)
-    batches = 0
-    for x_batch, y_batch in g:
-        model.fit(x_batch, y_batch)
-        batches += 1
-        if batches >= len(x_train) / 32:
-            # we need to break the loop by hand because the generator loops indefinitely
-            # これはなんでなん？決まった数まわしてるんじゃないんか
-            #あー普通にあれか、dataが無限に作られるからか
-            break
+def preprocess(x):
+    x /= 255.
+    return x
+
+# 指定した前処理を行う。いるんかな？
+#datagen = ImageDataGenerator(preprocessing_function=preprocess)
+
+datagen = ImageDataGenerator(
+    featurewise_center=False,#データセット全体で、入力の平均を０にする。これいんのかな
+    featurewise_std_normalization=False,#入力をデータセットの標準偏差で正規化する。さすがはNormalization
+    rotation_range=90,#画像をランダムに回転する回転範囲
+    width_shift_range=0.2,#ランダムに水平シフト
+    height_shift_range=0.2,#ランダムに垂直シフト
+    horizontal_flip=True,#ランダムに水平方向反転
+    vertical_flip=True,#ランダムに垂直方向反転
+    zoom_range=10)#ランダムにズームする範囲
+"""
+datagen.fit(x_train)#これは ZCAホワイトニングを適用する場合に必要な統計量を計算する感じ？今回はホワイトニングしてないからいらんかな
+"""
 
 """
 modelcheckpointの作成.これは転移学習になんのかな？あんまりわかってない。これの意味は一番いい結果だけそのモデル全体を保存しておくってこと。
 """
 from keras import callbacks#下記のModelCheckpointはEpoch終了後の各数値（acc,loss,val_acc,val_loss)を監視して条件が揃った場合モデルを保存する
+
+g = datagen.flow(x_train, y_train, batch_size=batch_size)
+
 
 modelcheckpoint = callbacks.ModelCheckpoint(filepath = 'modelimage.h5',#重みのファイル名そのもの
                                   monitor='Val_acc',#監視する値
@@ -204,11 +190,28 @@ modelcheckpoint = callbacks.ModelCheckpoint(filepath = 'modelimage.h5',#重み�
                                   mode='auto',#小さい時保存
                                   period=1)#何epoch数ごとに
 
+for e in range(epochs):#epoch数分だけ回す。今回は100
+    #print('Epoch', e)
+    batches = 0
+    for x_batch, y_batch in g:
+        model.fit_generator(g,
+                            steps_per_epoch=len(x_train) / batch_size,
+                            epochs=epochs,
+                            callbacks=[modelcheckpoint])  # ここの訓練にcallbacksを追
+        batches += 1
+        if batches >= len(x_train) / 64:
+            # we need to break the loop by hand because the generator loops indefinitely
+            # これはなんでなん？決まった数まわしてるんじゃないんか
+            #あー普通にあれか、dataが無限に作られるからか
+            break
+
+"""
 model.fit_generator(datagen.flow(x_train, y_train,
                             batch_size=batch_size),#学習する
                             steps_per_epoch=len(x_train) / batch_size,
                             epochs=epochs,
                             callbacks=[modelcheckpoint])#ここの訓練にcallbacksを追加
+"""
 
 score = model.evaluate(x_test, y_test)
 print('test_loss:', score[0])
