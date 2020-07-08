@@ -170,7 +170,8 @@ datagen = ImageDataGenerator(
     height_shift_range=0.2,#ランダムに垂直シフト
     horizontal_flip=True,#ランダムに水平方向反転
     vertical_flip=True,#ランダムに垂直方向反転
-    zoom_range=10)#ランダムにズームする範囲
+    zoom_range=10,
+    validation_split=0.1)#ランダムにズームする範囲
 """
 datagen.fit(x_train)#これは ZCAホワイトニングを適用する場合に必要な統計量を計算する感じ？今回はホワイトニングしてないからいらんかな
 """
@@ -180,8 +181,8 @@ modelcheckpointの作成.これは転移学習になんのかな？あんまり�
 """
 from keras import callbacks#下記のModelCheckpointはEpoch終了後の各数値（acc,loss,val_acc,val_loss)を監視して条件が揃った場合モデルを保存する
 
-g = datagen.flow(x_train, y_train, batch_size=batch_size)
-
+g = datagen.flow(x_train, y_train, batch_size=batch_size, shuffle=True, subset='training')
+v = datagen.flow(x_train, y_train, batch_size=batch_size, shuffle=True, subset='validation')
 
 modelcheckpoint = callbacks.ModelCheckpoint(filepath = checkpoint_filepath,#重みのファイル名そのもの
                                   monitor='loss',#監視する値
