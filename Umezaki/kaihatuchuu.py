@@ -26,6 +26,7 @@ batch_size = 100
 data_path = os.path.join("drive", "My Drive")
 train_h5_path = os.path.join(data_path, "food_c101_n10099_r64x64x3 (1).h5")  # train-data   pathの文字列を確認してみよう
 test_h5_path = os.path.join(data_path, "food_test_c101_n1000_r64x64x3 (1).h5")  # test-data
+checkpoint_filepath = os.path.join(data_path, "modelimage.h5")
 # windowsとlinuxで、スラッシュとバックスラッシュの違いがあることを気にしないために、 os.path.join を使う
 # train-data
 with h5py.File(train_h5_path, 'r') as file:  # train-dataを 'r' = read mode で読み込んで、変数fileに格納
@@ -182,13 +183,16 @@ from keras import callbacks#下記のModelCheckpointはEpoch終了後の各数�
 g = datagen.flow(x_train, y_train, batch_size=batch_size)
 
 
-modelcheckpoint = callbacks.ModelCheckpoint(filepath = 'modelimage.h5',#重みのファイル名そのもの
-                                  monitor='Val_acc',#監視する値
+modelcheckpoint = callbacks.ModelCheckpoint(filepath = checkpoint_filepath,#重みのファイル名そのもの
+                                  monitor='val_acc',#監視する値
                                   verbose=1,#1なら結果表示
                                   save_best_only=True,#判定結果から保存を決定
                                   save_weights_only=False,#True=モデルの重みが保存False＝モデル全体を保存
                                   mode='auto',#小さい時保存
                                   period=1)#何epoch数ごとに
+
+
+er_stop = callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=0, verbose=0, mode='auto')
 
 for e in range(epochs):#epoch数分だけ回す。今回は100
     #print('Epoch', e)
@@ -197,13 +201,14 @@ for e in range(epochs):#epoch数分だけ回す。今回は100
         model.fit_generator(g,
                             steps_per_epoch=len(x_train) / batch_size,
                             epochs=epochs,
-                            callbacks=[modelcheckpoint])  # ここの訓練にcallbacksを追
+                            callbacks=[modelcheckpoint,er_stop])  # ここの訓練にcallbacksを追
         batches += 1
         if batches >= len(x_train) / 64:
             # we need to break the loop by hand because the generator loops indefinitely
             # これはなんでなん？決まった数まわしてるんじゃないんか
             #あー普通にあれか、dataが無限に作られるからか
             break
+#model.load_weights(checkpoint_filepath)
 
 """
 model.fit_generator(datagen.flow(x_train, y_train,
