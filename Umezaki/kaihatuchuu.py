@@ -16,7 +16,7 @@ import keras.layers as layers
 """
 ハイパラ調整
 """
-epochs = 50
+epochs = 25
 batch_size = 100
 
 """
@@ -185,7 +185,7 @@ g = datagen.flow(x_train, y_train, batch_size=batch_size, shuffle=True, subset='
 v = datagen.flow(x_train, y_train, batch_size=batch_size, shuffle=True, subset='validation')
 
 modelcheckpoint = callbacks.ModelCheckpoint(filepath = checkpoint_filepath,#重みのファイル名そのもの
-                                  monitor='loss',#監視する値
+                                  monitor='val_loss',#監視する値
                                   verbose=1,#1なら結果表示
                                   save_best_only=True,#判定結果から保存を決定
                                   save_weights_only=False,#True=モデルの重みが保存False＝モデル全体を保存
@@ -193,7 +193,7 @@ modelcheckpoint = callbacks.ModelCheckpoint(filepath = checkpoint_filepath,#重�
                                   period=1)#何epoch数ごとに
 
 
-er_stop = callbacks.EarlyStopping(monitor='loss', min_delta=0.1, patience=20, verbose=1, mode='min')
+er_stop = callbacks.EarlyStopping(monitor='val_acc', min_delta=0.1, patience=20, verbose=1, mode='max')
 
 for e in range(epochs):#epoch数分だけ回す。今回は10
     #print('Epoch', e)
