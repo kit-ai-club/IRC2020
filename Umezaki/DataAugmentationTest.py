@@ -26,12 +26,12 @@ print(x.shape)
 datagen = ImageDataGenerator(
     featurewise_center=False,  # データセット全体で、入力の平均を０にする。これいんのかな
     featurewise_std_normalization=False,  # 入力をデータセットの標準偏差で正規化する。さすがはNormalization
-    rotation_range=90,  # 画像をランダムに回転する回転範囲
+    rotation_range=45,  # 画像をランダムに回転する回転範囲
     width_shift_range=0.2,  # ランダムに水平シフト
     height_shift_range=0.2,  # ランダムに垂直シフト
     horizontal_flip=True,  # ランダムに水平方向反転
     vertical_flip=True,  # ランダムに垂直方向反転
-    zoom_range=10
+    #zoom_range=10
 )  # ランダムにズームする範囲
 
 n = 9

@@ -30,7 +30,7 @@ import gc
 """
 data path
 """
-data_path = os.path.join("data")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
+data_path = os.path.join("drive/My Drive")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
 train_path = os.path.join(data_path, "train")
 test_path = os.path.join(data_path, "test")
 
@@ -70,19 +70,20 @@ ki = 'he_normal'
 kr = regularizers.l2(1e-11)
 x = Conv2D(filters=f, kernel_size=7, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(inputs)
 x = MaxPooling2D(pool_size=2)(x)
-n = 5 #回数の設定（ここは実験で変更したい）
+n = 5  # 回数の設定（ここは実験で変更したい）
 for i in range(n):
     shortcut = x
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
     x = Dropout(rate=0.3)(x)
-    x = Conv2D(filters=f*(2**i), kernel_size=1, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
+    x = Conv2D(filters=f * (2 ** i), kernel_size=1, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
-    x = Conv2D(filters=f*(2**i), kernel_size=3, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
+    x = Conv2D(filters=f * (2 ** i), kernel_size=3, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
-    x = Conv2D(filters=f*(2**(i+2)), kernel_size=1, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(x)
+    x = Conv2D(filters=f * (2 ** (i + 2)), kernel_size=1, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(
+        x)
     x = Concatenate()([x, shortcut])
     if i != (n - 1):
         x = MaxPooling2D(pool_size=2)(x)
@@ -124,7 +125,7 @@ def flow_from_h5(directory, batch_size, data_aug=False):
             if not data_aug:
                 datagen = ImageDataGenerator(rescale=1 / 255.)  # いじらない。rescaleで画像を正規化している。
 
-            else: # DataAugmentationするなら、引数（rescale以外）をいじる。
+            else:  # DataAugmentationするなら、引数（rescale以外）をいじる。
                 datagen = ImageDataGenerator(
                     rescale=1 / 255,
                     featurewise_center=False,  # データセット全体で、入力の平均を０にする。これいんのかな
