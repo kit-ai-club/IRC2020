@@ -12,13 +12,16 @@ from keras.losses import categorical_crossentropy
 from keras.layers import GlobalAveragePooling2D
 from keras import regularizers
 import keras.layers as layers
+import glob
+import gc
 
 """
 ハイパラ調整
 """
-epochs = 25
+epochs = 100
 batch_size = 100
-
+steps_per_epoch = 75750 // batch_size + 1  # 元は 75750 // batch_size + 1
+validation_steps = 25250 // batch_size + 1  # 元は  25250 // batch_size + 1
 """
 データの取得
 """
@@ -53,62 +56,12 @@ with h5py.File(test_h5_path, 'r') as file:
 ④show
 """
 # 画像チェック
-fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
-ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 =「1行2列のaxesを作って、その1番目(1列目)をreturnしろ」
+fig = plt.figure(figsize=(3, 3))  # figure-sizeはインチ単位
+ax = fig.add_subplot(111)  # Figure内にAxesを追加。121 =「1行2列のaxesを作って、その1番目(1列目)をreturnしろ」
 ax.imshow(x_train[0])  # 画像ならimshow()
 # 最後はpltに戻る
 x_train = x_train / 255.0
 x_test = x_test / 255.0
-
-"""
-sequentialモデル一旦グッバイ
-model = Sequential()
-model.add(Conv2D(64, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu', input_shape=(64, 64, 3)))
-model.add(BatchNormalization())
-model.add(Conv2D(64, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu'))
-model.add(BatchNormalization())
-model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'))
-model.add(Conv2D(128, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu'))
-model.add(BatchNormalization())
-model.add(Conv2D(128, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu'))
-model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'))
-model.add(Conv2D(256, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu'))
-model.add(BatchNormalization())
-model.add(Conv2D(256, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu'))
-model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'))
-model.add(Conv2D(512, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu'))
-model.add(BatchNormalization())
-model.add(Conv2D(512, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu'))
-model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'))
-model.add(GlobalAveragePooling2D())
-model.add(Dense(1024, activation='relu'))
-model.add(Dropout(0.5))
-model.add(Dense(101, activation='softmax'))
-model.compile(loss='categorical_crossentropy', optimizer=Adam(), metrics=['accuracy'])
-
-
-# 訓練の実行
-history = model.fit(x=x_train, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
-# historyに訓練の推移のデータが格納される
-# 評価
-score = model.evaluate(x_test, y_test)
-print('test_loss:', score[0])
-print('test_acc:', score[1])
-# 訓練の推移
-fig = plt.figure(figsize=(10, 5))
-ax = fig.add_subplot(121)
-ax.plot(range(epochs), history.history['accuracy'], label='training')  # x軸、y軸、ラベル
-ax.plot(range(epochs), history.history['val_accuracy'], label='validation')
-ax.set_title('accuracy')
-ax.legend()  # 凡例を表示する
-ax = fig.add_subplot(122)
-ax.plot(range(epochs), history.history['loss'], label='training')
-ax.plot(range(epochs), history.history['val_loss'], label='validation')
-ax.set_title('loss')
-ax.legend()  # 凡例を表示する
-plt.show()
-"""
-
 
 """
 resnetの部分
@@ -155,13 +108,103 @@ Data Augmentation
 """
 from keras.preprocessing.image import ImageDataGenerator
 
-def preprocess(x):
-    x /= 255.
-    return x
+# メモリリーク対策のグローバル変数
+x, y, datagen, generator = None, None, None, None  # いじらない
+def flow_from_h5(directory, batch_size, data_aug=False):
+    """
+    directory内のh5ファイルを順に読み込んで出力するジェネレータ。
+    ImageDataGeneratorの部分以外はいじらない。
+    """
 
-# 指定した前処理を行う。いるんかな？
-#datagen = ImageDataGenerator(preprocessing_function=preprocess)
+    files = glob.glob(os.path.join(directory, '*.h5'))#[*]はワイルドカード文字っていって長さ0文字以上の任意の文字列にマッチする。今回なら.h5が末尾につくファイルを全部取得する。
+    while True:#これなに？ずっと回すことにならん？whileって条件が1なら回し続けるんやろ？
+        for file in files:#filesの中にあるfileの数だけ回す
+            global x, y, datagen, generator #関数内だと変数を変更しても、その値を返さない限り変更の内容は保存されないが、global宣言を行うと返り値の設定無しで値を変えれる
+            del x, y, datagen, generator
+            gc.collect()#不要になったメモリ領域を自動的に解放する機能です.とのことですが、どゆことですかい？？まぁメモリの使用量減らして他に割り当てるってことかな？
 
+            with h5py.File(file, 'r') as f:
+                x = f['images'].value
+                y = f['category'].value
+
+            if not data_aug:#いつものifの逆で、条件を満たさないとき実行
+                datagen = ImageDataGenerator(rescale=1 / 255.)  # いじらない。rescaleで画像を正規化している。
+            else:
+                datagen = ImageDataGenerator(rescale=1 / 255.)  # DataAugmentationするなら、引数（rescale以外）をいじる。
+
+            generator = datagen.flow(
+                x,
+                y,
+                batch_size=batch_size,
+                shuffle=True, )
+            epoch_per_file = x.shape[0] // batch_size + 1
+            for e in range(epoch_per_file):
+                yield next(generator)
+
+
+"""
+画像を256*256にしてから激重なので、pycharm上でデバッグしたいときは、
+以下4つの値を全て小さめに設定すれば、動きが確認できる程度に軽くなるはず（colabで訓練するときは値を戻すことに注意）
+"""
+epochs = 100
+batch_size = 100
+steps_per_epoch = 75750 // batch_size + 1  # 元は 75750 // batch_size + 1
+validation_steps = 25250 // batch_size + 1  # 元は  25250 // batch_size + 1
+
+train_generator = flow_from_h5(train_path, batch_size, data_aug=True)
+test_generator = flow_from_h5(test_path, batch_size, data_aug=False)
+
+"""
+以降は、原則いじらない
+"""
+# 訓練
+history = model.fit_generator(
+    train_generator,
+    steps_per_epoch=steps_per_epoch,
+    epochs=epochs,
+    validation_data=test_generator,
+    validation_steps=validation_steps,
+    workers=0)
+
+# 評価
+score = model.evaluate_generator(
+    test_generator,
+    steps=validation_steps,
+    workers=0)
+print('test_loss:', score[0])
+print('test_acc:', score[1])
+
+# 訓練の推移
+fig = plt.figure(figsize=(10, 5))
+
+ax = fig.add_subplot(121)
+ax.plot(range(epochs), history.history['acc'], label='training')  # x軸、y軸、ラベル
+ax.plot(range(epochs), history.history['val_acc'], label='validation')
+ax.set_title('acc')
+ax.legend()  # 凡例を表示する
+
+ax = fig.add_subplot(122)
+ax.plot(range(epochs), history.history['loss'], label='training')
+ax.plot(range(epochs), history.history['val_loss'], label='validation')
+ax.set_title('loss')
+ax.legend()  # 凡例を表示する
+
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"""
 datagen = ImageDataGenerator(
     featurewise_center=False,#データセット全体で、入力の平均を０にする。これいんのかな
     featurewise_std_normalization=False,#入力をデータセットの標準偏差で正規化する。さすがはNormalization
@@ -170,15 +213,9 @@ datagen = ImageDataGenerator(
     height_shift_range=0.2,#ランダムに垂直シフト
     horizontal_flip=True,#ランダムに水平方向反転
     vertical_flip=True,#ランダムに垂直方向反転
-    zoom_range=10,
+    #zoom_range=10,
     validation_split=0.1)#ランダムにズームする範囲
-"""
-datagen.fit(x_train)#これは ZCAホワイトニングを適用する場合に必要な統計量を計算する感じ？今回はホワイトニングしてないからいらんかな
-"""
 
-"""
-modelcheckpointの作成.これは転移学習になんのかな？あんまりわかってない。これの意味は一番いい結果だけそのモデル全体を保存しておくってこと。
-"""
 from keras import callbacks#下記のModelCheckpointはEpoch終了後の各数値（acc,loss,val_acc,val_loss)を監視して条件が揃った場合モデルを保存する
 
 g = datagen.flow(x_train, y_train, batch_size=batch_size, shuffle=True, subset='training')
@@ -193,13 +230,13 @@ modelcheckpoint = callbacks.ModelCheckpoint(filepath = checkpoint_filepath,#重�
                                   period=1)#何epoch数ごとに
 
 
-er_stop = callbacks.EarlyStopping(monitor='loss', min_delta=0.1, patience=20, verbose=1, mode='min')
+er_stop = callbacks.EarlyStopping(monitor='loss', min_delta=0.07, patience=3, verbose=1, mode='min')
 
 for e in range(epochs):#epoch数分だけ回す。今回は10
     #print('Epoch', e)
     batches = 0
     for x_batch, y_batch in g:
-        model.fit_generator(g,
+        history = model.fit_generator(g,#history追加してみた
                             steps_per_epoch=len(x_train) / batch_size,
                             epochs=epochs,
                             callbacks=[modelcheckpoint,er_stop])  # ここの訓練にcallbacksを追
@@ -210,14 +247,6 @@ for e in range(epochs):#epoch数分だけ回す。今回は10
             #あー普通にあれか、dataが無限に作られるからか
             break
 #model.load_weights(checkpoint_filepath)
-
-"""
-model.fit_generator(datagen.flow(x_train, y_train,
-                            batch_size=batch_size),#学習する
-                            steps_per_epoch=len(x_train) / batch_size,
-                            epochs=epochs,
-                            callbacks=[modelcheckpoint])#ここの訓練にcallbacksを追加
-"""
 
 score = model.evaluate(x_test, y_test)
 print('test_loss:', score[0])
@@ -238,3 +267,4 @@ ax.plot(range(epochs), history.history['val_loss'], label='validation')
 ax.set_title('loss')
 ax.legend()
 plt.show()
+"""

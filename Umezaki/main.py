@@ -18,7 +18,7 @@ import keras.layers as layers
 """
 epochs = 10
 batch_size = 100
-
+f = 64 #ここも変えるべきだろうか？
 """
 データの取得
 """
@@ -117,7 +117,6 @@ plt.show()
 resnetの部分
 """
 inputs = Input(shape=x_train.shape[1:])
-f = 64 #ここも変えるべきだろうか？
 ki = 'he_normal'
 kr = regularizers.l2(1e-11)
 x = Conv2D(filters=f, kernel_size=7, padding='same', kernel_initializer=ki, kernel_regularizer=kr)(inputs)

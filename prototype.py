@@ -21,7 +21,7 @@ import gc
 """
 data path
 """
-data_path = os.path.join("data")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
+data_path = os.path.join("drive", "My Drive")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
 train_path = os.path.join(data_path, "train")
 test_path = os.path.join(data_path, "test")
 
