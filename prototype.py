@@ -111,10 +111,10 @@ def flow_from_h5(directory, batch_size, data_aug=False):
 tpuでは、batch_sizeはメモリが耐える範囲でなるべく大きい方がいいらしい？ あと、8の倍数にした方がいいらしい。
 ただし、今回は1つのh5ファイルのサイズが5050なので、それよりは小さくしてください。
 """
-epochs = 20
-batch_size = 1024
-steps_per_epoch = 75750 // batch_size  # 元は 75750 // batch_size
-validation_steps = 25250 // batch_size  # 元は  25250 // batch_size
+epochs = 2
+batch_size = 4
+steps_per_epoch = 2   # 元は 75750 // batch_size
+validation_steps = 2   # 元は  25250 // batch_size
 
 """
 以降は、原則いじらない.
@@ -126,7 +126,7 @@ if tpu:
     strategy = keras_support.TPUDistributionStrategy(tpu_cluster_resolver)
     model = tf.contrib.tpu.keras_to_tpu_model(model, strategy=strategy)
 
-history = {"train_loss": [], "tarin_acc": [], "val_loss": [], "val_acc": []}
+history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
 
 # 訓練ループ fitの代わり
 for e in range(epochs):
@@ -153,6 +153,10 @@ for e in range(epochs):
     print()
 
     print(f"train_loss: {train_loss / steps_per_epoch}, train_acc: {train_acc / steps_per_epoch}, val_loss: {val_loss / validation_steps}, val_acc: {val_acc / validation_steps}")
+    history["train_loss"].append(train_loss / steps_per_epoch)
+    history["train_acc"].append(train_acc / steps_per_epoch)
+    history["val_loss"].append(val_loss / validation_steps)
+    history["val_acc"].append(val_acc / validation_steps)
 
     """
     early stopping, 学習率減衰は、ここ（ループ内）にコードを追加するといけるはず
@@ -178,44 +182,22 @@ print(f'test_acc: {test_acc / validation_steps}')
 ③axes上にグラフを作成する（axes.plot()なら折れ線グラフ、など）
 ④show
 """
-# # 訓練の推移
-# fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
-#
-# ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 ->「1行2列のaxesを作って、その1番目(1列目)のaxesをreturnしろ」
-# ax.plot(range(epochs), history.history['acc'], label='training')  # x軸、y軸、ラベル
-# ax.plot(range(epochs), history.history['val_acc'], label='validation')
-# ax.set_title('acc')
-# ax.legend()  # 凡例を表示する
-#
-# ax = fig.add_subplot(122)
-# ax.plot(range(epochs), history.history['loss'], label='training')
-# ax.plot(range(epochs), history.history['val_loss'], label='validation')
-# ax.set_title('loss')
-# ax.legend()  # 凡例を表示する
-#
-# plt.show()  # 表示
+# 訓練の推移
+fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
+
+ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 ->「1行2列のaxesを作って、その1番目(1列目)のaxesをreturnしろ」
+ax.plot(range(epochs), history['train_acc'], label='training')  # x軸、y軸、ラベル
+ax.plot(range(epochs), history['val_acc'], label='validation')
+ax.set_title('acc')
+ax.legend()  # 凡例を表示する
+
+ax = fig.add_subplot(122)
+ax.plot(range(epochs), history['train_loss'], label='training')
+ax.plot(range(epochs), history['val_loss'], label='validation')
+ax.set_title('loss')
+ax.legend()  # 凡例を表示する
+
+plt.show()  # 表示
 
 # いろんなハイパラを全てハードコーディングしていますが、
 # 通常はプログラムの最初にまとめたり、ハイパラだけをまとめたファイルから読み込んだりします。
-
-
-# labels = []
-# with open(os.path.join(data_path, "labels.txt")) as file:
-#     line = file.readline()[:-1]
-#     labels.append(line)
-
-
-# train_path = os.path.join(data_path, "train")  # train-data
-# test_path = os.path.join(data_path, "test")  # test-data
-# meta_path = os.path.join(data_path, "meta")  # test-data
-
-# def unpickle(file):
-#     import pickle
-#     with open(file, 'rb') as fo:
-#         dict = pickle.load(fo, encoding='bytes')
-#     return dict
-#
-#
-# meta = unpickle(meta_path)
-# train = unpickle(train_path)
-# test = unpickle(test_path)
