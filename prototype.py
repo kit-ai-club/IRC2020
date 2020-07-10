@@ -8,42 +8,40 @@
 import os
 import matplotlib.pyplot as plt
 import h5py
-from keras.models import Sequential, Model  # kerasというライブラリのmodelsパッケージにある、Sequential, Modelという何か（ファイル or 関数 or クラス）を使うよ～
-import keras.layers as layers
-from keras.preprocessing.image import ImageDataGenerator
 import numpy as np
 import glob
 import gc
 
 # pycharmでは、F4 を押すと、引用元・定義元に飛べるので使ってみよう
 
+"""
+tpuでの注意点
+・kerasではなくtensorflow.kerasをimportしていることを確認。
+・tensorflow1.13向けコードに変えた。colabで新しいコードブロックに以下を書いて実行してから、プログラムを動かすべし。
+    !pip3 uninstall tensorflow
+    !pip3 install tensorflow==1.13.2
+"""
+tpu = True  # colabでtpu使うときはTrueにする
+
+import tensorflow as tf
+from tensorflow.keras.models import Sequential, Model  # kerasというライブラリのmodelsパッケージにある、Sequential, Modelという何か（ファイル or 関数 or クラス）を使うよ～
+import tensorflow.keras.layers as layers
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+if tpu:
+    from tensorflow.contrib.tpu.python.tpu import keras_support
+
+# tpu使用時のバグ対策で、tensorflow.train パッケージの中にあるoptimizerを使う必要がある。
+optim = tf.train.AdamOptimizer(learning_rate=1e-3)  # optimizerはここで変更する
 
 """
 data path
 """
-data_path = os.path.join("drive", "My Drive")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
+data_path = os.path.join("data")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
+if tpu:
+    data_path = os.path.join("drive", "My Drive", "data")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
 train_path = os.path.join(data_path, "train")
 test_path = os.path.join(data_path, "test")
-
-# example
-ex_path = os.path.join(train_path, "train_256_0.h5")
-with h5py.File(ex_path, 'r') as file:  # train-dataを 'r' = read mode で読み込んで、変数fileに格納
-    x_train = file['images'].value  # imagesにアクセス。さらに、.value と書くとnumpy形式にしてくれる
-    y_train = file['category'].value  # 教師データ（正解データ）。すでにone-hot vector になっている
-
-"""
-【matplotlib.pyplotの基本】
-※pyplotはpltとしてimportしておく
-①figure（ウィンドウ）を作成する
-②figure上にaxes（グラフ領域）を１つ以上作成する
-③axes上にグラフを作成する（axes.plot()なら折れ線グラフ、など）
-④show
-"""
-# 画像チェック
-fig = plt.figure(figsize=(3, 3))  # figure-sizeはインチ単位
-ax = fig.add_subplot(111)  # Figure内にAxesを追加。121 =「1行2列のaxesを作って、その1番目(1列目)をreturnしろ」
-ax.imshow(x_train[0])  # 画像ならimshow()
-plt.show()  # 最後はpltに戻る
 
 """
 keras Functinal API での流れ
@@ -54,7 +52,6 @@ keras Functinal API での流れ
 ⑤model.fit()  　　　  訓練
 ⑥model.evaluate()　　 評価
 """
-
 inputs = layers.Input(shape=(256, 256, 3))
 x = layers.Conv2D(64, kernel_size=3, padding='same', activation='relu')(inputs)
 x = layers.MaxPool2D(2)(x)
@@ -71,18 +68,16 @@ x = layers.Dense(101, activation='softmax')(x)
 model = Model(inputs=inputs, outputs=x)
 
 # 各種設定
-model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
+model.compile(optimizer=optim, loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
 
 # メモリリーク対策のグローバル変数
 x, y, datagen, generator = None, None, None, None  # いじらない
-
 
 def flow_from_h5(directory, batch_size, data_aug=False):
     """
     directory内のh5ファイルを順に読み込んで出力するジェネレータ。
     ImageDataGeneratorの部分以外はいじらない。
     """
-
     files = glob.glob(os.path.join(directory, '*.h5'))
     while True:
         for file in files:
@@ -90,9 +85,10 @@ def flow_from_h5(directory, batch_size, data_aug=False):
             del x, y, datagen, generator
             gc.collect()
 
-            with h5py.File(file, 'r') as f:
-                x = f['images'].value
-                y = f['category'].value
+            with h5py.File(file, 'r') as f:  # 'r' = read mode で読み込んで、変数fに格納
+                x = f['images'].value  # train dataであるimagesにアクセス。さらに、.value と書くとnumpy形式にしてくれる
+                y = f['category'].value  # 教師データ（正解データ）。すでにone-hot vector になっている
+                assert batch_size <= x.shape[0]
 
             if not data_aug:
                 datagen = ImageDataGenerator(rescale=1 / 255.)  # いじらない。rescaleで画像を正規化している。
@@ -104,59 +100,96 @@ def flow_from_h5(directory, batch_size, data_aug=False):
                 y,
                 batch_size=batch_size,
                 shuffle=True, )
-            epoch_per_file = x.shape[0] // batch_size + 1
-            for e in range(epoch_per_file):
+            for _ in range(x.shape[0] // batch_size):
                 yield next(generator)
-
 
 """
 画像を256*256にしてから激重なので、pycharm上でデバッグしたいときは、
 以下4つの値を全て小さめに設定すれば、動きが確認できる程度に軽くなるはず（colabで訓練するときは値を戻すことに注意）
+
+tpuでは、batch_sizeは大きい方がいいらしい？（数千？）
+ただし、今回は1つのh5ファイルのサイズが5050なので、それよりは小さくしてください。
 """
-epochs = 100
-batch_size = 100
-steps_per_epoch = 75750 // batch_size + 1  # 元は 75750 // batch_size + 1
-validation_steps = 25250 // batch_size + 1  # 元は  25250 // batch_size + 1
-
-train_generator = flow_from_h5(train_path, batch_size, data_aug=True)
-test_generator = flow_from_h5(test_path, batch_size, data_aug=False)
+epochs = 20
+batch_size = 1024
+steps_per_epoch = 75750 // batch_size  # 元は 75750 // batch_size
+validation_steps = 25250 // batch_size  # 元は  25250 // batch_size
 
 """
-以降は、原則いじらない
+以降は、原則いじらない.
+ただし、early stopping, 学習率減衰などを使う場合は、訓練ループ内をいじる。
 """
-# 訓練
-history = model.fit_generator(
-    train_generator,
-    steps_per_epoch=steps_per_epoch,
-    epochs=epochs,
-    validation_data=test_generator,
-    validation_steps=validation_steps,
-    workers=0)
+if tpu:
+    tpu_grpc_url = "grpc://" + os.environ["COLAB_TPU_ADDR"]
+    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(tpu_grpc_url)
+    strategy = keras_support.TPUDistributionStrategy(tpu_cluster_resolver)
+    model = tf.contrib.tpu.keras_to_tpu_model(model, strategy=strategy)
 
-# 評価
-score = model.evaluate_generator(
-    test_generator,
-    steps=validation_steps,
-    workers=0)
-print('test_loss:', score[0])
-print('test_acc:', score[1])
+history = {"train_loss": [], "tarin_acc": [], "val_loss": [], "val_acc": []}
 
-# 訓練の推移
-fig = plt.figure(figsize=(10, 5))
+# 訓練ループ fitの代わり
+for e in range(epochs):
+    train_loss, train_acc, val_loss, val_acc = 0, 0, 0, 0
+    print("=" * 30)
+    print(f"epoch: {e + 1}/{epochs}")
 
-ax = fig.add_subplot(121)
-ax.plot(range(epochs), history.history['acc'], label='training')  # x軸、y軸、ラベル
-ax.plot(range(epochs), history.history['val_acc'], label='validation')
-ax.set_title('acc')
-ax.legend()  # 凡例を表示する
+    # train
+    for step in range(steps_per_epoch):
+        x_batch, y_batch = next(flow_from_h5(train_path, batch_size, data_aug=True))
+        loss, acc = model.train_on_batch(x_batch, y_batch)
+        train_loss += loss
+        train_acc += acc
+        print(f"train step: {step + 1}/{steps_per_epoch}")
 
-ax = fig.add_subplot(122)
-ax.plot(range(epochs), history.history['loss'], label='training')
-ax.plot(range(epochs), history.history['val_loss'], label='validation')
-ax.set_title('loss')
-ax.legend()  # 凡例を表示する
+    # validation
+    for step in range(validation_steps):
+        x_batch, y_batch = next(flow_from_h5(test_path, batch_size, data_aug=False))
+        loss, acc = model.test_on_batch(x_batch, y_batch)
+        val_loss += loss
+        val_acc += acc
+        print(f"val step: {step + 1}/{validation_steps}")
 
-plt.show()
+    print(f"train_loss: {train_loss}, train_acc: {train_acc}, val_loss: {val_loss}, val_acc: {val_acc}")
+
+    """
+    early stopping, 学習率減衰は、ここ（ループ内）にコードを追加するといけるはず
+    """
+
+# 評価ループ evaluateの代わり
+test_loss, test_acc = 0, 0
+for step in range(validation_steps):
+    x_batch, y_batch = next(flow_from_h5(test_path, batch_size, data_aug=False))
+    loss, acc = model.test_on_batch(x_batch, y_batch)
+    test_loss += loss
+    test_acc += acc
+    print(f"test step: {step + 1}/{validation_steps}")
+print(f'test_loss: {test_loss}')
+print(f'test_acc: {test_acc}')
+
+"""
+【matplotlib.pyplotの基本】
+※pyplotはpltとしてimportしておく
+①figure（ウィンドウ）を作成する
+②figure上にaxes（グラフ領域）を１つ以上作成する
+③axes上にグラフを作成する（axes.plot()なら折れ線グラフ、など）
+④show
+"""
+# # 訓練の推移
+# fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
+#
+# ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 ->「1行2列のaxesを作って、その1番目(1列目)のaxesをreturnしろ」
+# ax.plot(range(epochs), history.history['acc'], label='training')  # x軸、y軸、ラベル
+# ax.plot(range(epochs), history.history['val_acc'], label='validation')
+# ax.set_title('acc')
+# ax.legend()  # 凡例を表示する
+#
+# ax = fig.add_subplot(122)
+# ax.plot(range(epochs), history.history['loss'], label='training')
+# ax.plot(range(epochs), history.history['val_loss'], label='validation')
+# ax.set_title('loss')
+# ax.legend()  # 凡例を表示する
+#
+# plt.show()  # 表示
 
 # いろんなハイパラを全てハードコーディングしていますが、
 # 通常はプログラムの最初にまとめたり、ハイパラだけをまとめたファイルから読み込んだりします。
