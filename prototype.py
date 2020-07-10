@@ -21,7 +21,7 @@ tpuでの注意点
     !pip3 uninstall tensorflow
     !pip3 install tensorflow==1.13.2
 """
-tpu = True  # colabでtpu使うときはTrueにする
+tpu = False  # colabでtpu使うときはTrueにする
 
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model  # kerasというライブラリのmodelsパッケージにある、Sequential, Modelという何か（ファイル or 関数 or クラス）を使うよ～
@@ -30,9 +30,10 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 if tpu:
     from tensorflow.contrib.tpu.python.tpu import keras_support
-
-# tpu使用時のバグ対策で、tensorflow.train パッケージの中にあるoptimizerを使う必要がある。
-optim = tf.train.AdamOptimizer(learning_rate=1e-3)  # optimizerはここで変更する
+    # tpu使用時のバグ対策で、tensorflow.train パッケージの中にあるoptimizerを使う必要がある。
+    optim = tf.train.AdamOptimizer(learning_rate=1e-3)  # optimizerはここで変更する
+else:
+    optim = 'adam'  # optimizerはここで変更する
 
 """
 data path
@@ -107,7 +108,7 @@ def flow_from_h5(directory, batch_size, data_aug=False):
 画像を256*256にしてから激重なので、pycharm上でデバッグしたいときは、
 以下4つの値を全て小さめに設定すれば、動きが確認できる程度に軽くなるはず（colabで訓練するときは値を戻すことに注意）
 
-tpuでは、batch_sizeは大きい方がいいらしい？（数千？）
+tpuでは、batch_sizeはメモリが耐える範囲でなるべく大きい方がいいらしい？ あと、8の倍数にした方がいいらしい。
 ただし、今回は1つのh5ファイルのサイズが5050なので、それよりは小さくしてください。
 """
 epochs = 20
@@ -139,7 +140,8 @@ for e in range(epochs):
         loss, acc = model.train_on_batch(x_batch, y_batch)
         train_loss += loss
         train_acc += acc
-        print(f"train step: {step + 1}/{steps_per_epoch}")
+        print(f"\rtrain step: {step + 1}/{steps_per_epoch}", end="")
+    print()
 
     # validation
     for step in range(validation_steps):
@@ -147,9 +149,10 @@ for e in range(epochs):
         loss, acc = model.test_on_batch(x_batch, y_batch)
         val_loss += loss
         val_acc += acc
-        print(f"val step: {step + 1}/{validation_steps}")
+        print(f"\rval step: {step + 1}/{validation_steps}", end="")
+    print()
 
-    print(f"train_loss: {train_loss}, train_acc: {train_acc}, val_loss: {val_loss}, val_acc: {val_acc}")
+    print(f"train_loss: {train_loss / steps_per_epoch}, train_acc: {train_acc / steps_per_epoch}, val_loss: {val_loss / validation_steps}, val_acc: {val_acc / validation_steps}")
 
     """
     early stopping, 学習率減衰は、ここ（ループ内）にコードを追加するといけるはず
@@ -162,9 +165,10 @@ for step in range(validation_steps):
     loss, acc = model.test_on_batch(x_batch, y_batch)
     test_loss += loss
     test_acc += acc
-    print(f"test step: {step + 1}/{validation_steps}")
-print(f'test_loss: {test_loss}')
-print(f'test_acc: {test_acc}')
+    print(f"\rtest step: {step + 1}/{validation_steps}", end="")
+print()
+print(f'test_loss: {test_loss / validation_steps}')
+print(f'test_acc: {test_acc / validation_steps}')
 
 """
 【matplotlib.pyplotの基本】
