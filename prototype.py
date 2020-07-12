@@ -102,7 +102,7 @@ def flow_from_h5(directory, batch_size, data_aug=False):
                 y,
                 batch_size=batch_size,
                 shuffle=True, )
-            for _ in range(x.shape[0] // batch_size):
+            for _ in range(x.shape[0] // batch_size):  # 1ファイルあたり、5050 // batch_size 回学習
                 yield next(generator)
 
 """
@@ -114,8 +114,8 @@ tpuでは、batch_sizeは、「メモリが耐える範囲でなるべく大き�
 """
 epochs = 10
 batch_size = 1024
-steps_per_epoch = 15   # 元は 15（h5ファイル数に合わせて）
-validation_steps = 5   # 元は  5（h5ファイル数に合わせて）
+steps_per_epoch = 5050 // batch_size * 15   # 元は  5050 // batch_size * 15 （15=trainのh5ファイル数）
+validation_steps = 5050 // batch_size * 5   # 元は  5050 // batch_size * 5  （5=testのh5ファイル数）
 
 """
 以降は、原則いじらない.
@@ -128,6 +128,8 @@ if tpu:
     model = tf.contrib.tpu.keras_to_tpu_model(model, strategy=strategy)
 
 history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
+train_generator = flow_from_h5(train_path, batch_size, data_aug=True)
+validation_generator = flow_from_h5(test_path, batch_size, data_aug=False)
 
 # 訓練ループ fitの代わり
 for e in range(epochs):
@@ -137,7 +139,7 @@ for e in range(epochs):
 
     # train
     for step in range(steps_per_epoch):
-        x_batch, y_batch = next(flow_from_h5(train_path, batch_size, data_aug=True))
+        x_batch, y_batch = next(train_generator)
         loss, acc = model.train_on_batch(x_batch, y_batch)
         train_loss += loss
         train_acc += acc
@@ -146,7 +148,7 @@ for e in range(epochs):
 
     # validation
     for step in range(validation_steps):
-        x_batch, y_batch = next(flow_from_h5(test_path, batch_size, data_aug=False))
+        x_batch, y_batch = next(validation_generator)
         loss, acc = model.test_on_batch(x_batch, y_batch)
         val_loss += loss
         val_acc += acc
@@ -166,7 +168,7 @@ for e in range(epochs):
 # 評価ループ evaluateの代わり
 test_loss, test_acc = 0, 0
 for step in range(validation_steps):
-    x_batch, y_batch = next(flow_from_h5(test_path, batch_size, data_aug=False))
+    x_batch, y_batch = next(validation_generator)
     loss, acc = model.test_on_batch(x_batch, y_batch)
     test_loss += loss
     test_acc += acc
