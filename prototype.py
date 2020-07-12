@@ -21,7 +21,7 @@ tpuでの注意点
     !pip3 uninstall tensorflow
     !pip3 install tensorflow==1.13.2
 """
-tpu = False  # colabでtpu使うときはTrueにする
+tpu = True  # colabでtpu使うときはTrueにする
 
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model  # kerasというライブラリのmodelsパッケージにある、Sequential, Modelという何か（ファイル or 関数 or クラス）を使うよ～
@@ -80,6 +80,7 @@ def flow_from_h5(directory, batch_size, data_aug=False):
     ImageDataGeneratorの部分以外はいじらない。
     """
     files = glob.glob(os.path.join(directory, '*.h5'))
+    assert len(files) != 0
     while True:
         for file in files:
             global x, y, datagen, generator
@@ -108,13 +109,13 @@ def flow_from_h5(directory, batch_size, data_aug=False):
 画像を256*256にしてから激重なので、pycharm上でデバッグしたいときは、
 以下4つの値を全て小さめに設定すれば、動きが確認できる程度に軽くなるはず（colabで訓練するときは値を戻すことに注意）
 
-tpuでは、batch_sizeはメモリが耐える範囲でなるべく大きい方がいいらしい？ あと、8の倍数にした方がいいらしい。
+tpuでは、batch_sizeは、「メモリが耐える範囲でなるべく大きな、8の倍数」にした方がいい。
 ただし、今回は1つのh5ファイルのサイズが5050なので、それよりは小さくしてください。
 """
-epochs = 2
-batch_size = 4
-steps_per_epoch = 2   # 元は 75750 // batch_size
-validation_steps = 2   # 元は  25250 // batch_size
+epochs = 10
+batch_size = 1024
+steps_per_epoch = 15   # 元は 15（h5ファイル数に合わせて）
+validation_steps = 5   # 元は  5（h5ファイル数に合わせて）
 
 """
 以降は、原則いじらない.
