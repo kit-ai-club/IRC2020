@@ -30,6 +30,7 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 if tpu:
     from tensorflow.contrib.tpu.python.tpu import keras_support
+
     # tpu使用時のバグ対策で、tensorflow.train パッケージの中にあるoptimizerを使う必要がある。
     optim = tf.train.AdamOptimizer(learning_rate=1e-3)  # optimizerはここで変更する
 else:
@@ -38,9 +39,7 @@ else:
 """
 data path
 """
-data_path = os.path.join("data")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
-if tpu:
-    data_path = os.path.join("drive", "My Drive", "data")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
+data_path = os.path.join("drive", "My Drive", "data")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
 train_path = os.path.join(data_path, "train")
 test_path = os.path.join(data_path, "test")
 
@@ -74,6 +73,7 @@ model.compile(optimizer=optim, loss='categorical_crossentropy', metrics=['acc'])
 # メモリリーク対策のグローバル変数
 x, y, datagen, generator = None, None, None, None  # いじらない
 
+
 def flow_from_h5(directory, batch_size, data_aug=False):
     """
     directory内のh5ファイルを順に読み込んで出力するジェネレータ。
@@ -90,7 +90,7 @@ def flow_from_h5(directory, batch_size, data_aug=False):
             with h5py.File(file, 'r') as f:  # 'r' = read mode で読み込んで、変数fに格納
                 x = f['images'].value  # train dataであるimagesにアクセス。さらに、.value と書くとnumpy形式にしてくれる
                 y = f['category'].value  # 教師データ（正解データ）。すでにone-hot vector になっている
-                assert batch_size <= x.shape[0]
+                assert batch_size <= x.shape[0], 'データ読み込み失敗。データどこにあるん？。data path 設定ミスってない？'
 
             if not data_aug:
                 datagen = ImageDataGenerator(rescale=1 / 255.)  # いじらない。rescaleで画像を正規化している。
@@ -105,6 +105,7 @@ def flow_from_h5(directory, batch_size, data_aug=False):
             for _ in range(x.shape[0] // batch_size):  # 1ファイルあたり、5050 // batch_size 回学習
                 yield next(generator)
 
+
 """
 画像を256*256にしてから激重なので、pycharm上でデバッグしたいときは、
 以下4つの値を全て小さめに設定すれば、動きが確認できる程度に軽くなるはず（colabで訓練するときは値を戻すことに注意）
@@ -114,8 +115,8 @@ tpuでは、batch_sizeは、「メモリが耐える範囲でなるべく大き�
 """
 epochs = 10
 batch_size = 1024
-steps_per_epoch = 5050 // batch_size * 15   # 元は  5050 // batch_size * 15 （15=trainのh5ファイル数）
-validation_steps = 5050 // batch_size * 5   # 元は  5050 // batch_size * 5  （5=testのh5ファイル数）
+steps_per_epoch = 5050 // batch_size * 15  # 元は  5050 // batch_size * 15 （15=trainのh5ファイル数）
+validation_steps = 5050 // batch_size * 5  # 元は  5050 // batch_size * 5  （5=testのh5ファイル数）
 
 """
 以降は、原則いじらない.
@@ -130,6 +131,13 @@ if tpu:
 history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
 train_generator = flow_from_h5(train_path, batch_size, data_aug=True)
 validation_generator = flow_from_h5(test_path, batch_size, data_aug=False)
+
+"""
+early stopping 関連の変数・パラメタ
+"""
+loss_min = float('inf')  # ロスの最小値を格納する。最初は無限大で定義しておく。
+patience = 0  # loss_minが更新されないまま、何エポック経過したかを格納。0で定義しておく。
+patience_max = 10  # patienceがpatience_maxに達するまでloss_minが更新されなかったら打ち切る。必要ならいじる。
 
 # 訓練ループ fitの代わり
 for e in range(epochs):
@@ -162,8 +170,17 @@ for e in range(epochs):
     history["val_acc"].append(val_acc / validation_steps)
 
     """
-    early stopping, 学習率減衰は、ここ（ループ内）にコードを追加するといけるはず
+    early stopping, 学習率減衰は、以下（ループ内）にコードを追加するといけるはず
     """
+    # early stopping
+    if val_loss > loss_min:
+        patience += 1
+        if patience >= patience_max:
+            print('Early Stopping...')
+            break
+    else:
+        patience = 0
+        loss_min = val_loss
 
 # 評価ループ evaluateの代わり
 test_loss, test_acc = 0, 0
@@ -189,14 +206,14 @@ print(f'test_acc: {test_acc / validation_steps}')
 fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
 
 ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 ->「1行2列のaxesを作って、その1番目(1列目)のaxesをreturnしろ」
-ax.plot(range(epochs), history['train_acc'], label='training')  # x軸、y軸、ラベル
-ax.plot(range(epochs), history['val_acc'], label='validation')
+ax.plot(range(len(history['train_acc'])), history['train_acc'], label='training')  # x軸、y軸、ラベル
+ax.plot(range(len(history['val_acc'])), history['val_acc'], label='validation')
 ax.set_title('acc')
 ax.legend()  # 凡例を表示する
 
 ax = fig.add_subplot(122)
-ax.plot(range(epochs), history['train_loss'], label='training')
-ax.plot(range(epochs), history['val_loss'], label='validation')
+ax.plot(range(len(history['train_loss'])), history['train_loss'], label='training')
+ax.plot(range(len(history['val_loss'])), history['val_loss'], label='validation')
 ax.set_title('loss')
 ax.legend()  # 凡例を表示する
 
