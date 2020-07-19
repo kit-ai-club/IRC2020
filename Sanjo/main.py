@@ -8,140 +8,57 @@
 import os
 import matplotlib.pyplot as plt
 import h5py
-from keras.models import Sequential, Model  # kerasというライブラリのmodelsパッケージにある、Sequential, Modelという何か（ファイル or 関数 or クラス）を使うよ～
-import keras.layers as layers
 import numpy as np
+import glob
+import gc
+
+from tensorflow.keras import *
+from tensorflow.keras.layers import (
+    Activation,
+    Add,
+    BatchNormalization,
+    Conv2D,
+    Dense,
+    Dropout,
+    Flatten,
+    GlobalAveragePooling2D,
+    Input,
+    MaxPooling2D,
+    Concatenate
+)
+
+
 # pycharmでは、F4 を押すと、引用元・定義元に飛べるので使ってみよう
 
+"""
+tpuでの注意点
+・kerasではなくtensorflow.kerasをimportしていることを確認。
+・tensorflow1.13向けコードに変えた。colabで新しいコードブロックに以下を書いて実行してから、プログラムを動かすべし。
+    !pip3 uninstall tensorflow
+    !pip3 install tensorflow==1.13.2
+"""
+tpu = True  # colabでtpu使うときはTrueにする
+
+import tensorflow as tf
+from tensorflow.keras.models import Sequential, Model  # kerasというライブラリのmodelsパッケージにある、Sequential, Modelという何か（ファイル or 関数 or クラス）を使うよ～
+import tensorflow.keras.layers as layers
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+if tpu:
+    from tensorflow.contrib.tpu.python.tpu import keras_support
+    # tpu使用時のバグ対策で、tensorflow.train パッケージの中にあるoptimizerを使う必要がある。
+    optim = tf.train.AdamOptimizer(learning_rate=1e-3)  # optimizerはここで変更する
+else:
+    optim = 'adam'  # optimizerはここで変更する
 
 """
-データの取得
+data path
 """
-# data-fileの場所（kaggleからDLする）
-data_path = os.path.join("drive", "My Drive")
-train_h5_path = os.path.join(data_path, "food_c101_n10099_r64x64x3.h5")  # train-data   pathの文字列を確認してみよう
-test_h5_path = os.path.join(data_path, "food_test_c101_n1000_r64x64x3.h5")  # test-data
-# windowsとlinuxで、スラッシュとバックスラッシュの違いがあることを気にしないために、 os.path.join を使う
-
-
-# train-data
-with h5py.File(train_h5_path, 'r') as file:  # train-dataを 'r' = read mode で読み込んで、変数fileに格納
-    print(file.keys())  # .h5 形式では、関数keys()で中身が見れる
-    x_train = file['images'].value  # imagesにアクセス。さらに、.value と書くとnumpy形式にしてくれる
-    y_train = file['category'].value  # 教師データ（正解データ）。すでにone-hot vector になっている
-    category_names = file['category_names'].value  # str型ではなく、bytes型で格納されている。見てみよう
-    label_names = [x.decode() for x in file['category_names'].value]  # 全カテゴリ名を格納。bytes型は、decode()でstrに変換できる。
-    print(label_names)
-# with構文で開いたファイルは、構文が終われば自動的に閉じられる。
-
-# x_train = (10099, 64, 64, 3), y_train = (10099, 101)
-#  ↑ このようにshapeを調べてメモしておくと便利
-
-
-# test-data
-with h5py.File(test_h5_path, 'r') as file:
-    print(file.keys())
-    x_test = file['images'].value
-    y_test = file['category'].value
-
-
-#def gray_scale(x):
-    # Y = 0.299 * R + 0.587 * G + 0.114 * B
- #   y = 0.299 * x[:, :, :, 0] + 0.587 * x[:, :, :, 1] + 0.114 * x[:, :, :, 2]  # x_train = (10099, 64, 64, 3)
- #   return 255 - y  # yは輝度なので255-y
-
-
-
-
-# グレースケールにする（全結合層は、3チャンネル(RGB)の情報を扱えないため）
-# x_train_rgb = np.reshape(x_train, (-1, 64 * 64 * 3))
-# x_test_rgb = np.reshape(x_test, (-1, 64 * 64 * 3))
-#
-
-"""
-【matplotlib.pyplotの基本】
-※pyplotはpltとしてimportしておく
-①figure（ウィンドウ）を作成する
-②figure上にaxes（グラフ領域）を１つ以上作成する
-③axes上にグラフを作成する（axes.plot()なら折れ線グラフ、など）
-④show
-"""
-# 画像チェック
-#fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
-#ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 =「1行2列のaxesを作って、その1番目(1列目)をreturnしろ」
-#ax.imshow(x_train[0])  # 画像ならimshow()
-#ax = fig.add_subplot(122)
-#ax.imshow(x_train_gray[0], cmap='Greys')  # gray-scaleデータなので追加の引数
-#plt.show()  # 最後はpltに戻る
-
-
-"""
-データの加工
-"""
-# 全結合層を使うので、画像を1次元化。画像データの行列を短冊状に切ってベクトル化。
-#x_train_gray = x_train_gray.reshape(10099, 64 * 64)  # もともと (10099, 64, 64) だったのを、(10099, 64 * 64) に。
-#x_test_gray = x_test_gray.reshape(1000, 64 * 64)
-
-# 画素を0~1の範囲に変換(正規化)。入力される値は０付近でないと、訓練が安定しない。
-x_train_rgb = x_train_rgb / 255
-x_test_rgb = x_test_rgb / 255
-
-"""
-keras Sequential での流れ
-①model = Sequential()  箱の作成
-②model.add()         　層の追加
-③model.compile()     　設定
-④model.fit()  　　　　　訓練
-⑤model.evaluate()　　 　評価
-"""
-
-# Sequentialは、モデルを入れる箱のクラス。
-model = Sequential()
-# Dense＝全結合層。activation＝活性化関数。input_dim＝入力次元＝入力ノードの数。512＝出力ノードの数。
-model.add(layers.Dense(512, activation='relu', input_dim=64 * 64 * 3))
-model.add(layers.Dense(512, activation='relu'))
-model.add(layers.Dense(101, activation='softmax'))  # 最終層のactivationは、確率を出すためにsoftmax。101クラスの分類。
-
-# ちなみに、「次元」というのは、1層あたりのノードの数＝ベクトルの要素数や、画像データのピクセル数などを表す。
-# （「画像データ＝2次元」という表現とはまた違う「次元」の話）
-
-
-# 各種設定
-model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
-
-
-# 訓練の実行
-epochs = 100
-batch_size = 512
-#history = model.fit(x=x_train_gray, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
-history = model.fit(x=x_train_rgb, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
-# historyに訓練の推移のデータが格納される
-
-
-# 評価
-#score = model.evaluate(x_test_gray, y_test)
-score = model.evaluate(x_test_rgb, y_test)
-print('test_loss:', score[0])
-print('test_acc:', score[1])
-
-
-# 訓練の推移
-fig = plt.figure(figsize=(10, 5))
-
-ax = fig.add_subplot(121)
-ax.plot(range(epochs), history.history['acc'], label='training')  # x軸、y軸、ラベル
-ax.plot(range(epochs), history.history['val_acc'], label='validation')
-ax.set_title('acc')
-ax.legend()  # 凡例を表示する
-
-ax = fig.add_subplot(122)
-ax.plot(range(epochs), history.history['loss'], label='training')
-ax.plot(range(epochs), history.history['val_loss'], label='validation')
-ax.set_title('loss')
-ax.legend()  # 凡例を表示する
-
-plt.show()
-
+data_path = os.path.join("data")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
+if tpu:
+    data_path = os.path.join("drive", "My Drive", "data")  # colabの場合、google-driveのルートが、"drive/My Drive" となる
+train_path = os.path.join(data_path, "train")
+test_path = os.path.join(data_path, "test")
 
 """
 keras Functinal API での流れ
@@ -152,45 +69,175 @@ keras Functinal API での流れ
 ⑤model.fit()  　　　  訓練
 ⑥model.evaluate()　　 評価
 """
+inputs = layers.Input(shape=(256, 256, 3))
+f = 64
+ki = 'he_normal'
+kr = regularizers.l2(1e-4)
+ii=64
 
-inputs = layers.Input(shape=(64,64,3))
-x = layers.Conv2D(64, kernel_size=3, padding='same',activation='relu')(inputs)
-x = layers.Dropout(0.5)(x)
-x = layers.MaxPool(2)(x)    #32, 32, 64
-x = layers.Conv2D(128, kernel_size=3, padding='same',activation='relu')(x)
-x = layers.MaxPool(2)(x)    #16, 16, 128
-x = layers.Conv2D(256, kernel_size=3, padding='same',activation='relu')(x)
-x = layers.MaxPool(2)(x)    #8, 8, 256
-x = layers.Conv2D(512, kernel_size=3, padding='same',activation='relu')(x)
-x = layers.MaxPool(2)(x)    #4, 4, 512
-x = layers.Conv2D(1024, kernel_size=3, padding='same',activation='relu')(x)
+x = layers.Conv2D(ii, kernel_size=3, padding='same', activation='relu')(inputs)
+x = layers.MaxPool2D(2)(x)
+number=5
+for i in range(number):
+  f=f*2;
+  shortcut = x
+  x=BatchNormalization()(x)
+  x=Activation("relu")(x)
+  x=Dropout(0.3)(x)
+  x=Conv2D(f,kernel_size=1,padding="same" ,kernel_initializer=ki,kernel_regularizer=kr)(x)
+  x=BatchNormalization()(x)
+  x=Activation("relu")(x)
+  x=Conv2D(f,kernel_size=3,padding="same" ,kernel_initializer=ki,kernel_regularizer=kr)(x)
+  x=BatchNormalization()(x)
+  x=Activation("relu")(x)
+  x=Dropout(0.3)(x)
+  x=Conv2D(f,kernel_size=1,padding="same" ,kernel_initializer=ki,kernel_regularizer=kr)(x)
+  x=Concatenate()([x,shortcut])
+  if(i!=(number-1)):
+      x=MaxPooling2D(pool_size=2)(x)
 x = layers.GlobalAveragePooling2D()(x)
+x = layers.Dense(f, activation='relu')(x)
+x = layers.Dense(f, activation='relu')(x)
+x = layers.Dropout(0.4)(x)
 x = layers.Dense(101, activation='softmax')(x)
-
 model = Model(inputs=inputs, outputs=x)
 
-# 以降は同じ
-model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
 
-history = model.fit(x=x_train_rgb, y=y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+# 各種設定
+model.compile(optimizer=optim, loss='categorical_crossentropy', metrics=['acc'])  # metrics=評価関数、acc=accuracy
 
-score = model.evaluate(x_test_rgb, y_test)
-print('test_loss:', score[0])
-print('test_acc:', score[1])
+# メモリリーク対策のグローバル変数
+x, y, datagen, generator = None, None, None, None  # いじらない
 
-fig = plt.figure(figsize=(10, 5))
-ax = fig.add_subplot(121)
-ax.plot(range(epochs), history.history['acc'], label='training')
-ax.plot(range(epochs), history.history['val_acc'], label='validation')
+def flow_from_h5(directory, batch_size, data_aug=False):
+    """
+    directory内のh5ファイルを順に読み込んで出力するジェネレータ。
+    ImageDataGeneratorの部分以外はいじらない。
+    """
+    files = glob.glob(os.path.join(directory, '*.h5'))
+    assert len(files) != 0
+    while True:
+        for file in files:
+            global x, y, datagen, generator
+            del x, y, datagen, generator
+            gc.collect()
+
+            with h5py.File(file, 'r') as f:  # 'r' = read mode で読み込んで、変数fに格納
+                x = f['images'].value  # train dataであるimagesにアクセス。さらに、.value と書くとnumpy形式にしてくれる
+                y = f['category'].value  # 教師データ（正解データ）。すでにone-hot vector になっている
+                assert batch_size <= x.shape[0]
+
+            if not data_aug:
+                datagen = ImageDataGenerator(rescale=1 / 255.)  # いじらない。rescaleで画像を正規化している。
+            else:
+                datagen = ImageDataGenerator(rescale=1 / 255.)  # DataAugmentationするなら、引数（rescale以外）をいじる。
+
+            generator = datagen.flow(
+                x,
+                y,
+                batch_size=batch_size,
+                shuffle=True, )
+            for _ in range(x.shape[0] // batch_size):  # 1ファイルあたり、5050 // batch_size 回学習
+                yield next(generator)
+
+"""
+画像を256*256にしてから激重なので、pycharm上でデバッグしたいときは、
+以下4つの値を全て小さめに設定すれば、動きが確認できる程度に軽くなるはず（colabで訓練するときは値を戻すことに注意）
+
+tpuでは、batch_sizeは、「メモリが耐える範囲でなるべく大きな、8の倍数」にした方がいい。
+ただし、今回は1つのh5ファイルのサイズが5050なので、それよりは小さくしてください。
+"""
+
+epochs = 100
+batch_size = 100
+
+steps_per_epoch = 5050 // batch_size * 15   # 元は  5050 // batch_size * 15 （15=trainのh5ファイル数）
+validation_steps = 5050 // batch_size * 5   # 元は  5050 // batch_size * 5  （5=testのh5ファイル数）
+
+"""
+以降は、原則いじらない.
+ただし、early stopping, 学習率減衰などを使う場合は、訓練ループ内をいじる。
+"""
+if tpu:
+    tpu_grpc_url = "grpc://" + os.environ["COLAB_TPU_ADDR"]
+    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(tpu_grpc_url)
+    strategy = keras_support.TPUDistributionStrategy(tpu_cluster_resolver)
+    model = tf.contrib.tpu.keras_to_tpu_model(model, strategy=strategy)
+
+history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
+train_generator = flow_from_h5(train_path, batch_size, data_aug=True)
+validation_generator = flow_from_h5(test_path, batch_size, data_aug=False)
+
+# 訓練ループ fitの代わり
+for e in range(epochs):
+    train_loss, train_acc, val_loss, val_acc = 0, 0, 0, 0
+    print("=" * 30)
+    print(f"epoch: {e + 1}/{epochs}")
+
+    # train
+    for step in range(steps_per_epoch):
+        x_batch, y_batch = next(train_generator)
+        loss, acc = model.train_on_batch(x_batch, y_batch)
+        train_loss += loss
+        train_acc += acc
+        print(f"\rtrain step: {step + 1}/{steps_per_epoch}", end="")
+    print()
+
+    # validation
+    for step in range(validation_steps):
+        x_batch, y_batch = next(validation_generator)
+        loss, acc = model.test_on_batch(x_batch, y_batch)
+        val_loss += loss
+        val_acc += acc
+        print(f"\rval step: {step + 1}/{validation_steps}", end="")
+    print()
+
+    print(f"train_loss: {train_loss / steps_per_epoch}, train_acc: {train_acc / steps_per_epoch}, val_loss: {val_loss / validation_steps}, val_acc: {val_acc / validation_steps}")
+    history["train_loss"].append(train_loss / steps_per_epoch)
+    history["train_acc"].append(train_acc / steps_per_epoch)
+    history["val_loss"].append(val_loss / validation_steps)
+    history["val_acc"].append(val_acc / validation_steps)
+
+    """
+    early stopping, 学習率減衰は、ここ（ループ内）にコードを追加するといけるはず
+    """
+
+# 評価ループ evaluateの代わり
+test_loss, test_acc = 0, 0
+for step in range(validation_steps):
+    x_batch, y_batch = next(validation_generator)
+    loss, acc = model.test_on_batch(x_batch, y_batch)
+    test_loss += loss
+    test_acc += acc
+    print(f"\rtest step: {step + 1}/{validation_steps}", end="")
+print()
+print(f'test_loss: {test_loss / validation_steps}')
+print(f'test_acc: {test_acc / validation_steps}')
+
+"""
+【matplotlib.pyplotの基本】
+※pyplotはpltとしてimportしておく
+①figure（ウィンドウ）を作成する
+②figure上にaxes（グラフ領域）を１つ以上作成する
+③axes上にグラフを作成する（axes.plot()なら折れ線グラフ、など）
+④show
+"""
+# 訓練の推移
+fig = plt.figure(figsize=(10, 5))  # figure-sizeはインチ単位
+
+ax = fig.add_subplot(121)  # Figure内にAxesを追加。121 ->「1行2列のaxesを作って、その1番目(1列目)のaxesをreturnしろ」
+ax.plot(range(epochs), history['train_acc'], label='training')  # x軸、y軸、ラベル
+ax.plot(range(epochs), history['val_acc'], label='validation')
 ax.set_title('acc')
-ax.legend()
-ax = fig.add_subplot(122)
-ax.plot(range(epochs), history.history['loss'], label='training')
-ax.plot(range(epochs), history.history['val_loss'], label='validation')
-ax.set_title('loss')
-ax.legend()
-plt.show()
+ax.legend()  # 凡例を表示する
 
+ax = fig.add_subplot(122)
+ax.plot(range(epochs), history['train_loss'], label='training')
+ax.plot(range(epochs), history['val_loss'], label='validation')
+ax.set_title('loss')
+ax.legend()  # 凡例を表示する
+
+plt.show()  # 表示
 
 # いろんなハイパラを全てハードコーディングしていますが、
 # 通常はプログラムの最初にまとめたり、ハイパラだけをまとめたファイルから読み込んだりします。
